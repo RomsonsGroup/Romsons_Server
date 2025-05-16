@@ -1,4 +1,8 @@
+const fs = require('fs')
 const sql = require("../db.js");
+const { Parser } = require('json2csv');
+const path = require('path');
+// const getAddress = require('./getAddress');
 
 
 // constructor
@@ -91,6 +95,7 @@ reports.LastTwovisit_OrderHistory = (req, result) => {
         NULL AS zone_id,
         NULL AS division_m,
         NULL AS remark, 
+        NULL AS follow_up,
         'order' AS source
     FROM 
         crm_dev_db.cor_order_m m
@@ -133,6 +138,7 @@ UNION ALL
         act.zone_id,
         act.division_m,
         act.remark, 
+        act.follow_up,
         'activity' AS source
     FROM 
         crm_dev_db.cor_outlet_activity_m act
@@ -257,22 +263,7 @@ reports.Eodfetch = (req, result) => {
 };
 
 
-const getAddress = async (lat, long) => {
-  try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${long}&key=AIzaSyC4cMHPr8PdH18gyzIJ6YMlTJSHEDGwvNM`;
-    const response = await fetch(url);
-    const data = await response.json();
 
-
-    if (data.results && data.results.length > 0) {
-      return data.results[0].formatted_address;
-    }
-    return "Address not found";
-  } catch (error) {
-    console.error("Error fetching address:", error);
-    return "Error fetching address";
-  }
-};
 
 
 
@@ -334,6 +325,117 @@ reports.getOrdersAndActivitiesByDate = (req, result) => {
     return result({ error: false, data: res });
   });
 };
+
+//getting address by using lat log
+const getAddress = async (lat, long) => {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${long}&key=AIzaSyC4cMHPr8PdH18gyzIJ6YMlTJSHEDGwvNM`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+
+    if (data.results && data.results.length > 0) {
+      return data.results[0].formatted_address;
+    }
+    return "Address not found";
+  } catch (error) {
+    console.error("Error fetching address:", error);
+    return "Error fetching address";
+  }
+};
+
+//external apis
+// reports.getOrdersAndActivitiesByDateAddress = async (req, res) => {
+//   const enter_by = req.query.enterBy;
+//   const selected_date = req.query.enter_date;
+
+//   const query = `
+//     (
+//       SELECT 
+//           outlet.outlet_name,
+//           TIME_FORMAT(CONVERT_TZ(m.enter_date, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
+//           m.order_lat AS lat, 
+//           m.order_lag AS lng, 
+//           'O' AS source
+//       FROM 
+//           crm_dev_db.cor_order_m m
+//           JOIN crm_dev_db.cor_outlet_m outlet ON m.outlet_id = outlet.outlet_id
+//       WHERE 
+//           m.enter_by = ? 
+//           AND DATE(m.enter_date) = ? 
+//     )
+//     UNION ALL
+//     (
+//       SELECT 
+//           outlet.outlet_name,
+//           TIME_FORMAT(CONVERT_TZ(act.enter_date, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
+//           act.act_lat AS lat, 
+//           act.act_long AS lng, 
+//           'A' AS source
+//       FROM 
+//           crm_dev_db.cor_outlet_activity_m act
+//           LEFT JOIN crm_dev_db.cor_outlet_m outlet ON act.outlet_id = outlet.outlet_id
+//       WHERE 
+//           act.enter_by = ? 
+//           AND DATE(act.enter_date) = ? 
+//     )
+//     ORDER BY 
+//         date ASC;
+//   `;
+
+//   sql.query(query, [enter_by, selected_date, enter_by, selected_date], async (err, data) => {
+//     if (err) {
+//       console.error("Query Error:", err);
+//       return res.status(500).send("Something went wrong");
+//     }
+
+//     try {
+//       // Add addresses for each location
+//       for (const item of data) {
+//         if (item.lat && item.lng) {
+//           item.address = await getAddress(item.lat, item.lng);  // Make sure `getAddress` is properly async
+//         } else {
+//           item.address = "Location not available";
+//         }
+//       }
+
+//       // Prepare the CSV
+//       const fields = ['outlet_name', 'date', 'lat', 'lng', 'source', 'address'];
+//       const json2csvParser = new Parser({ fields });
+//       const csv = json2csvParser.parse(data);
+
+//       // Ensure the directory exists before writing the file
+//       const reportDir = path.join(__dirname, './reports');
+//       if (!fs.existsSync(reportDir)) {
+//         fs.mkdirSync(reportDir, { recursive: true });
+//       }
+
+//       // Define file path for the report
+//       const filePath = path.join(reportDir, `report_${Date.now()}.csv`);
+
+//       // Write CSV to file
+//       fs.writeFileSync(filePath, csv);
+
+//       // Send the file as a download
+//       res.download(filePath, (err) => {
+//         if (err) {
+//           console.error("File Download Error:", err);
+//           return res.status(500).send("Error in downloading file");
+//         }
+
+//         // Cleanup the file after sending it
+//         fs.unlinkSync(filePath); // Delete the file after download
+//       });
+
+//     } catch (csvError) {
+//       console.error("CSV Generation Error:", csvError);
+//       return res.status(500).send("CSV generation failed");
+//     }
+//   });
+// };
+
+
+
 
 reports.OrderHistory_MIS = (req, result) => {
   console.log('Request Body:', req.body);

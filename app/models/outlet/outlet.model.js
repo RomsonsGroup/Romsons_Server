@@ -283,7 +283,7 @@ outlet.Dealernamelist = (req, result) => {
   sql.query(`
     SELECT 
     emp.emp_id,
-     emp.city_id,
+     emp.state_id,
      dealer.dealer_id, 
     dealer.dealer_name 
 FROM 
@@ -291,7 +291,7 @@ FROM
 JOIN 
     crm_dev_db.cor_dealer_m AS dealer 
 ON 
-    emp.city_id = dealer.city_id  
+    emp.state_id = dealer.state_id  
 WHERE 
     emp.emp_id = '${req.body.empidd}';  
   `, (err, res) => {

@@ -104,10 +104,10 @@ attendance.attendance_punchout = (req, result) => {
       if (err) {
         result({ error: true, message: "Something went wrong while checking punch-out" });
       } else {
-        if (res.length > 0) { 
+        if (res.length > 0) {
           result({ error: true, message: "You have already punched out today." });
         } else {
-          
+
           sql.query(`
             UPDATE crm_dev_db.cor_attendance_m 
             SET 
@@ -422,6 +422,151 @@ attendance.LeaveApp = (req, result) => {
     });
   });
 };
+
+
+
+// attendance.LeaveApp = (req, result) => {
+//   const { empID, rpPerson, fromDate, toDate, numofdays, leavereason, enterBy } = req.body;
+
+//   // Get leave counter from cor_shift_m table
+//   const leaveLimitQuery = `SELECT leave_counter FROM crm_dev_db.cor_shift_m WHERE leave_counter IS NOT NULL LIMIT 1`;
+
+//   sql.query(leaveLimitQuery, (err, limitRes) => {
+//     if (err) {
+//       console.log(err);
+//       result({ error: true, data: "Something Went Wrong" });
+//       return;
+//     }
+
+//     // Default to 15 if no leave_counter is found
+//     const maxLeaveLimit = limitRes.length > 0 ? limitRes[0].leave_counter : 15;
+
+//     // **Validation for maximum leave days** - Ensure user cannot apply for more than 15 days at once
+//     if (numofdays > maxLeaveLimit) {
+//       result({ error: true, data: `You cannot apply for more than ${maxLeaveLimit} leaves at once.` });
+//       return;
+//     }
+
+//     // Determine the initial leave type based on number of days
+//     let conditionalLeaveType;
+//     if (numofdays === 1) {
+//       conditionalLeaveType = 'SL';
+//     } else if (numofdays === 2) {
+//       conditionalLeaveType = 'CL';
+//     } else {
+//       conditionalLeaveType = 'EL';
+//     }
+
+//     // Query to check leave balances for the employee
+//     const leaveBalanceQuery = `
+//       SELECT 
+//         GREATEST(
+//           COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 12) - 
+//           COALESCE(SUM(CASE WHEN lm.leave_type = 'CL' THEN lm.leave_days ELSE 0 END), 0), 
+//           0
+//         ) AS cl_balance,
+//         GREATEST(
+//           COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 15) - 
+//           COALESCE(SUM(CASE WHEN lm.leave_type = 'EL' THEN lm.leave_days ELSE 0 END), 0), 
+//           0
+//         ) AS el_balance,
+//         GREATEST(
+//           COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 6) - 
+//           COALESCE(SUM(CASE WHEN lm.leave_type = 'SL' THEN lm.leave_days ELSE 0 END), 0), 
+//           0
+//         ) AS sl_balance
+//       FROM 
+//         crm_dev_db.cor_leave_summary sm
+//       LEFT JOIN 
+//         crm_dev_db.cor_leave_m lm 
+//       ON 
+//         sm.emp_id = lm.emp_id 
+//       AND sm.leave_type = lm.leave_type
+//        AND YEAR(lm.enter_date) = YEAR(CURRENT_DATE())
+//      WHERE 
+//        sm.emp_id = '${empID}'
+//      GROUP BY 
+//        sm.emp_id`;
+
+//     sql.query(leaveBalanceQuery, (err, balanceRes) => {
+//       if (err) {
+//         console.log(err);
+//         result({ error: true, data: "Something Went Wrong" });
+//         return;
+//       }
+
+//       // Extract leave balances or assign default values
+//       const { cl_balance, el_balance, sl_balance } = balanceRes[0] || { cl_balance: 12, el_balance: 15, sl_balance: 6 };
+
+//       // Determine the final leave type based on balance and number of days
+//       let lopMessage = null;
+
+//       if (conditionalLeaveType === 'SL' && sl_balance > 0) {
+//         conditionalLeaveType = 'SL';
+//       } else if (conditionalLeaveType === 'CL' && cl_balance > 0) {
+//         conditionalLeaveType = 'CL';
+//       } else if (conditionalLeaveType === 'EL' && el_balance > 0) {
+//         conditionalLeaveType = 'EL';
+//       } else {
+//         conditionalLeaveType = 'LOP';
+//         lopMessage = "You do not have sufficient leave balance. Your leave will be marked as LOP (Loss of Pay).";
+//       }
+
+//       // Check for overlapping leave applications
+//       const overlapCheckQuery = `
+//         SELECT * 
+// FROM crm_dev_db.cor_leave_m 
+// WHERE 
+//   (
+//     (start_date <= '${fromDate}' AND end_date >= '${fromDate}') OR
+//     (start_date <= '${toDate}' AND end_date >= '${toDate}') OR
+//     (start_date >= '${fromDate}' AND end_date <= '${toDate}')
+//   )
+// `;
+
+//       sql.query(overlapCheckQuery, (err, res) => {
+//         if (err) {
+//           console.log(err);
+//           result({ error: true, data: "Something Went Wrong" });
+//           return;
+//         }
+
+//         if (res.length > 0) {
+//           result({ error: true, data: "Leave already applied for the selected dates" });
+//           return;
+//         }
+
+//         // Insert leave application with the determined leave type
+//         // Check if the user is applying for 15 or fewer days, in that case, use the direct leave_counter from cor_shift_m table
+//         const leaveCounter = numofdays <= 15 ? limitRes[0].leave_counter : 'default_leave_counter';
+
+//         const insertLeaveQuery = `
+//           INSERT INTO crm_dev_db.cor_leave_m 
+//             (leave_counter, reporting_to, leave_type, start_date, end_date, leave_days, leave_reason, enter_by, enter_date)
+//           VALUES 
+//             ('${leaveCounter}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${toDate}', '${numofdays}', '${leavereason}', '${enterBy}', sysdate())`;
+
+//         sql.query(insertLeaveQuery, (err, insertRes) => {
+//           if (err) {
+//             console.log(err);
+//             result({ error: true, data: "Something Went Wrong" });
+//             return;
+//           }
+
+//           // Provide appropriate response message
+//           result({
+//             error: false,
+//             data: insertRes,
+//             msg: lopMessage
+//               ? lopMessage + " Leave application submitted successfully."
+//               : "Leave application submitted successfully.",
+//           });
+//         });
+//       });
+//     });
+//   });
+// };
+
 
 
 
@@ -822,6 +967,154 @@ attendance.LeaveCount = (req, result) => {
 // };
 
 
+
+
+// attendance.attandance_count = (req, result) => {
+//   const punchDate = req.query.punch_date; // Date parameter (YYYY-MM-DD)
+//   const empId = req.query.emp_id; // Employee ID parameter (optional)
+
+//   const user = JSON.parse(req.headers.authorization);
+
+//   if (user.role === 1) {
+//     let query = `
+//      SELECT 
+//         IFNULL(a.attendance_id, NULL) AS attendance_id,
+//         d.punch_date, 
+//         COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
+//         COALESCE(TIME(a.punch_out), '00:00:00') AS punch_out_time,
+//         e.emp_id,
+//         TRIM(e.emp_code) AS emp_code, 
+//         TRIM(e.user_name) AS user_name, 
+//         'RGPL' AS company_name,
+
+//         -- Attendance status logic with WEO and PHY
+//         CASE
+//         WHEN h.date IS NOT NULL AND DAYOFWEEK(h.date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Holiday on Sunday without punch-in/out
+//             WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY' -- Holiday without punch-in/out
+// WHEN a.leave_status = 2 THEN 'L' -- Leave applied
+//     WHEN a.leave_status = 1 THEN 'A' -- Absent
+//             WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Saturday weekly off for specific state
+//             WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Sunday weekly off
+//             WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A' -- Absent on non-holiday
+//             WHEN a.status = 1 AND TIMESTAMPDIFF(MINUTE, a.punch_in, a.punch_out) >= 8 THEN 'P' -- Present for full day
+//             WHEN a.status = 1 AND TIMESTAMPDIFF(MINUTE, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' -- Half-day absent
+//             ELSE 'A' -- Default absent
+//         END AS attendance_status,
+
+//         -- Leave type logic
+//         CASE 
+//             WHEN a.leave_status = 2 THEN COALESCE(l.leave_type, '0')  
+//             ELSE '0'  
+//         END AS leave_type,
+
+//        IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL, 
+//     CONCAT(FLOOR(TIMESTAMPDIFF(MINUTE, a.punch_in, a.punch_out) / 60), ' hours ', 
+//            TIMESTAMPDIFF(MINUTE, a.punch_in, a.punch_out) % 60, ' minutes'), 
+//     '0 hours 0 minutes'
+// ) AS total_hours
+
+
+
+
+//      FROM 
+//         (SELECT ? AS punch_date) d
+//      LEFT JOIN 
+//         crm_dev_db.cor_emp_m e ON 1 = 1
+//      LEFT JOIN 
+//         crm_dev_db.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+//      LEFT JOIN 
+//         crm_dev_db.cor_leave_m l ON e.emp_id = l.emp_id 
+//         AND l.start_date <= d.punch_date 
+//         AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+//      LEFT JOIN
+//         crm_dev_db.holiday_m h ON FIND_IN_SET(e.state_id, h.state_id) > 0
+//   AND h.date = d.punch_date
+//      WHERE 
+//         e.status = 'A'
+//     `;
+
+//     if (empId) {
+//       query += ` AND e.emp_id = ?`;
+//     }
+
+//     const queryParams = empId ? [punchDate, empId] : [punchDate];
+
+//     sql.query(query, queryParams, (err, res) => {
+//       if (err) {
+//         console.error("Query Error: ", err);
+//         result({ error: true, message: "Failed to fetch attendance data" });
+//         return;
+//       }
+
+//       const convertedResults = res.map(record => {
+//         // Convert punch-in and punch-out times
+//         if (record.punch_in_time !== '00:00:00') {
+//           record.punch_in_time = moment
+//             .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
+//             .tz('Asia/Kolkata')
+//             .format('h:mm A');
+//         }
+
+//         if (record.punch_out_time !== '00:00:00') {
+//           record.punch_out_time = moment
+//             .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
+//             .tz('Asia/Kolkata')
+//             .format('h:mm A');
+//         }
+
+//         // Ensure consistent format for attendance_id
+//         if (!record.attendance_id) {
+//           const fixedPrefix = '100';
+//           const uniqueKey = `${record.emp_id}-${record.punch_date}`;
+//           const hash = crypto.createHash('sha256')
+//             .update(uniqueKey)
+//             .digest('hex');
+//           const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
+//           record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
+//         }
+
+//         return record;
+//       });
+
+//       result({ error: false, data: convertedResults });
+//     });
+//   } else {
+//     result({ error: true, message: "Unauthorized access" });
+//   }
+// };
+
+
+
+
+// attendance.punchInOutTime = (req, result) => {
+//   sql.query(`
+//     SELECT 
+//     DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in,
+//     DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out
+// FROM crm_dev_db.cor_attendance_m 
+// WHERE emp_id = '${req.body.empidd}' 
+// AND (
+//     DATE(CONVERT_TZ(punch_in, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
+//     OR DATE(CONVERT_TZ(punch_out, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
+// );
+
+
+//   `, (err, res) => {
+
+//     console.log("Result Data: ", res);
+
+//     if (err) {
+//       result({ error: true, data: "Something Went Wrong" });
+//     } else {
+//       result({ error: false, data: res });
+//     }
+//   });
+// };
+
+
+
+///////////////////////////attendance count///////////////////////////////
+
 attendance.attandance_count = (req, result) => {
   const punchDate = req.query.punch_date; // Date parameter (YYYY-MM-DD)
   const empId = req.query.emp_id; // Employee ID parameter (optional)
@@ -839,14 +1132,14 @@ attendance.attandance_count = (req, result) => {
         TRIM(e.emp_code) AS emp_code, 
         TRIM(e.user_name) AS user_name, 
         'RGPL' AS company_name,
-
+     
         -- Attendance status logic with WEO and PHY
         CASE
-        WHEN h.date IS NOT NULL AND DAYOFWEEK(h.date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Holiday on Sunday without punch-in/out
+        WHEN h.date IS NULL AND DAYOFWEEK(h.date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Holiday on Sunday without punch-in/out
             WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY' -- Holiday without punch-in/out
 WHEN a.leave_status = 2 THEN 'L' -- Leave applied
     WHEN a.leave_status = 1 THEN 'A' -- Absent
-            WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Saturday weekly off for specific state
+            WHEN h.date IS  NULL AND e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Saturday weekly off for specific state
             WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Sunday weekly off
             WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A' -- Absent on non-holiday
             WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' -- Present for full day
@@ -912,6 +1205,49 @@ WHEN a.leave_status = 2 THEN 'L' -- Leave applied
             .format('h:mm A');
         }
 
+        
+        // Compute total working hours accurately
+        let totalHours = 0;
+        let totalMinutes = 0;
+
+        // Compute total working hours accurately
+        if (record.punch_in_time !== '00:00:00' && record.punch_out_time !== '00:00:00') {
+        const punchInMoment = moment(record.punch_in_time, 'h:mm A');
+        const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
+
+        // Calculate duration
+        const duration = moment.duration(punchOutMoment.diff(punchInMoment));
+        totalHours = Math.floor(duration.asHours());
+        totalMinutes = duration.minutes();
+
+        // Format total working hours
+        record.total_hours = `${totalHours}:${totalMinutes.toString().padStart(2, '0')}`;
+    } else {
+        record.total_hours = '0:00';
+    }
+
+    console.log(record.attendance_status,"record.attendance_status");
+    
+    // Preserve WEO & PHY, don't overwrite if already set
+if (!['WEO', 'PHY'].includes(record.attendance_status)) {
+    // *Determine Attendance Status based on total_hours*
+    if (record.leave_status === 2) {
+      record.attendance_status = 'L'; // Leave applied
+  } else if (record.leave_status === 1) {
+      record.attendance_status = 'A'; // Absent
+  } else if (record.punch_in_time === '00:00:00' && record.punch_out_time === '00:00:00') {
+      record.attendance_status = 'A'; // Absent on non-holiday
+  } else if (totalHours >= 8) {
+      record.attendance_status = 'P'; // Present full day
+  } else if (totalHours >= 4) {
+      record.attendance_status = 'ABSHD'; // Half-day absent
+  } else {
+      record.attendance_status = 'A'; // Default absent
+  }
+}
+        //attendance status
+
+
         // Ensure consistent format for attendance_id
         if (!record.attendance_id) {
           const fixedPrefix = '100';
@@ -933,35 +1269,6 @@ WHEN a.leave_status = 2 THEN 'L' -- Leave applied
   }
 };
 
-
-
-
-// attendance.punchInOutTime = (req, result) => {
-//   sql.query(`
-//     SELECT 
-//     DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in,
-//     DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out
-// FROM crm_dev_db.cor_attendance_m 
-// WHERE emp_id = '${req.body.empidd}' 
-// AND (
-//     DATE(CONVERT_TZ(punch_in, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
-//     OR DATE(CONVERT_TZ(punch_out, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
-// );
-
-  
-//   `, (err, res) => {
-    
-//     console.log("Result Data: ", res);
-
-//     if (err) {
-//       result({ error: true, data: "Something Went Wrong" });
-//     } else {
-//       result({ error: false, data: res });
-//     }
-//   });
-// };
-
-
 attendance.punchInOutTime = (req, result) => {
   sql.query(`
     SELECT 
@@ -975,7 +1282,7 @@ attendance.punchInOutTime = (req, result) => {
       OR DATE(CONVERT_TZ(punch_out, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
     );
   `, (err, res) => {
-    
+
     console.log("Result Data: ", res);
 
     if (err) {
@@ -1000,7 +1307,7 @@ attendance.shiftDetails = (req, result) => {
 FROM 
     crm_dev_db.cor_shift_m;
   `, (err, res) => {
-    
+
     console.log("Result Data: ", res);
 
     if (err) {
@@ -1020,7 +1327,7 @@ FROM
 attendance.attandance_summary = (req, result) => {
   const empId = req.query.emp_id; // Employee ID parameter
 
-  
+
   const query = `
     SELECT 
       DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%l:%i %p') AS punch_in_time,  -- punch_in in AM/PM format

@@ -381,6 +381,14 @@ exports.EODActivityDatebutton = (req, res) => {
 
 };
 
+// exports.getOrdersAndActivitiesByDateAddress = (req, res) => {
+//   reportsModel.getOrdersAndActivitiesByDateAddress(req,(data) => {
+//   res.send(data);
+// });
+
+
+// };
+
 exports.ActivityDatabutton = (req, res) => {
   reportsModel.ActivityDatabutton(req,(data) => {
   console.log('listAuth -------', data);

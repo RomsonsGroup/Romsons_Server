@@ -67,6 +67,45 @@ exports.skulisthospital = (req, res) => {
 
 };
 
+
+exports.GetFollowUpActivities = (req, res) => {
+  skuorderModel.GetFollowUpActivities(req,(data) => {
+  console.log('listAuth -------', data);
+  res.send(data);
+});
+
+
+};
+
+
+exports.AddNewTask = (req, res) => {
+  skuorderModel.AddNewTask(req,(data) => {
+  console.log('listAuth -------', data);
+  res.send(data);
+});
+
+
+};
+
+
+exports.UpdateMultipleFollowUpTasks = (req, res) => {
+  skuorderModel.UpdateMultipleFollowUpTasks(req,(data) => {
+  console.log('listAuth -------', data);
+  res.send(data);
+});
+
+
+};
+
+exports.GetPendingTaskCount = (req, res) => {
+  skuorderModel.GetPendingTaskCount(req,(data) => {
+  console.log('listAuth -------', data);
+  res.send(data);
+});
+
+
+};
+
 exports.ActivityHospital = (req, res) => {
   skuorderModel.ActivityHospital(req,(data) => {
   console.log('listAuth -------', data);

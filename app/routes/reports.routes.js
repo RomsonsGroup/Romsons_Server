@@ -48,6 +48,7 @@ module.exports = app => {
     router.post("/EODActivityDatebutton", Reports.EODActivityDatebutton);
     router.post("/ActivityDatabutton", Reports.ActivityDatabutton);
     router.post("/EODAttendancebutton", Reports.EODAttendancebutton);
+    // router.get("/getOrdersAndActivitiesByDateAddress", Reports.getOrdersAndActivitiesByDateAddress);
     router.post("/skuorderwise", Reports.skuorderwise);
     router.post("/Totalskuorderwise", Reports.Totalskuorderwise);
     app.use('/', router);

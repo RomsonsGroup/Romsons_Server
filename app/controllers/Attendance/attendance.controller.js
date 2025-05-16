@@ -58,7 +58,7 @@ exports.ValidationAttendance = (req, res) => {
   exports.attandance_count = (req, res) => {
     attendancemodel.attandance_count(req,(data) => {
   
-      console.log('dashboardmodel -------', data);
+      // console.log('dashboardmodel -------', data);
       res.send(data);
     });
 

@@ -12,7 +12,11 @@ module.exports = app => {
     router.post("/orderreturn", Skuorder.orderreturn);
     router.post("/Schememaster", Skuorder.Schememaster);
     router.post("/skulisthospital", Skuorder.skulisthospital);
+    router.post("/GetFollowUpActivities", Skuorder.GetFollowUpActivities);
+    router.post("/AddNewTask", Skuorder.AddNewTask);
+    router.post("/UpdateMultipleFollowUpTasks", Skuorder.UpdateMultipleFollowUpTasks);
     router.post("/ActivityHospital", Skuorder.ActivityHospital);
+    router.post("/GetPendingTaskCount", Skuorder.GetPendingTaskCount);
     app.use('/', router);
   };
   
