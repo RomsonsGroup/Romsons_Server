@@ -325,7 +325,7 @@ skuorder.skulisthospital = (req, result) => {
       FROM crm_dev_db.cor_sku_m AS sku
       LEFT JOIN crm_dev_db.cor_segment_m AS seg ON sku.segment_id = seg.segment_id
       LEFT JOIN crm_dev_db.cor_division_m AS divs ON sku.division_id = divs.division_id
-      where sku.division_id = '${req.body.division}'`,
+      where sku.division_id = '${req.body.division}' ORDER BY sku.sku_name ASC`,
     (err, res) => {
       console.log("osbss: ", res);
       if (err) {
@@ -771,7 +771,28 @@ skuorder.GetPendingTaskCount = async (req, result) => {
 };
 
 
+skuorder.GetPendingTaskDates = async (req, result) => {
+  const { emp_id } = req.body;
+  const query = `
+  SELECT 
+    DATE_FORMAT(CONVERT_TZ(t.follow_up, '+00:00', '+05:30'), '%d-%m-%Y') AS pending_date
+  FROM crm_dev_db.cor_task_m t
+  LEFT JOIN crm_dev_db.cor_outlet_activity_m a ON t.activity_id = a.activity_id
+  WHERE t.status = 'Pending' 
+    AND t.follow_up IS NOT NULL
+    AND (a.enter_by = ? OR t.enter_by = ?)
+  GROUP BY pending_date
+  ORDER BY pending_date DESC
+`;
+  sql.query(query, [emp_id, emp_id], (err, res) => {
+    if (err) {
+      console.error("Pending Dates Error:", err);
+      return result({ error: true, message: "Something went wrong" });
+    }
 
+    return result({ error: false, pendingDates: res });
+  });
+};
 
 
 function OrderAutoNo() {

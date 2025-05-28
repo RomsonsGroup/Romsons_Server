@@ -6,6 +6,7 @@ module.exports = app => {
    
     // Retrieve all published osbss
     router.post("/loginApps", Auth.login);
+    // router.post("/checkStatus", Auth.checkStatus);
     router.post("/changepassword", Auth.changepassword);
     app.use('/', router);
   };

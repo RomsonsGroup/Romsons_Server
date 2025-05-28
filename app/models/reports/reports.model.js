@@ -1,7 +1,7 @@
-const fs = require('fs')
+
 const sql = require("../db.js");
-const { Parser } = require('json2csv');
-const path = require('path');
+
+// const path = require('path');
 // const getAddress = require('./getAddress');
 
 
@@ -66,9 +66,120 @@ WHERE
 
 
 
+// reports.LastTwovisit_OrderHistory = (req, result) => {
+//   sql.query(`
+//       (
+//     SELECT 
+//         m.order_id AS m_orderID,
+//         m.enter_date AS date, 
+//         m.outlet_id,
+//         m.phone_no,
+//         m.employee_id,
+//         m.total_quantity,
+//         m.scheme_discount,
+//         m.discount_amount,
+//         m.enter_by,
+//         d.item_id,
+//         d.item_qty,
+//         d.item_price_unit,
+//         d.item_value,
+//         d.item_gst,
+//         d.order_amt,
+//         d.order_gst_amt,
+//         itm.sku_name,
+//         itm.segment_id,
+//         outlet.outlet_name,
+//         NULL AS hospital_customer_name,
+//         NULL AS hospital_name,
+//         NULL AS activity_date,
+//         NULL AS zone_id,
+//         NULL AS division_m,
+//         NULL AS remark, 
+//         NULL AS follow_up,
+//         'order' AS source
+//     FROM 
+//         crm_dev_db.cor_order_m m
+//         JOIN crm_dev_db.cor_order_d d ON m.order_id = d.order_id
+//         JOIN crm_dev_db.cor_sku_m itm ON d.item_id = itm.sku_id
+//         JOIN crm_dev_db.cor_outlet_m outlet ON m.outlet_id = outlet.outlet_id
+//     WHERE 
+//         m.outlet_id = '${req.body.Outletid}'
+//         AND m.enter_by = '${req.body.enterBy}'
+//         AND DATE(m.enter_date) BETWEEN CURDATE() - INTERVAL 365 DAY AND CURDATE() - INTERVAL 1 DAY
+//     ORDER BY 
+//         m.enter_date DESC
+//     LIMIT 2
+// )
+// UNION ALL
+// (
+//     SELECT 
+//         act.id AS m_orderID, 
+//         act.enter_date AS date, 
+//         act.outlet_id,
+//         NULL AS phone_no,
+//         NULL AS employee_id,
+//         NULL AS total_quantity,
+//         NULL AS scheme_discount,
+//         NULL AS discount_amount,
+//         act.enter_by,
+//         act.item_id,
+//         NULL AS item_qty,
+//         NULL AS item_price_unit,
+//         NULL AS item_value,
+//         NULL AS item_gst,
+//         NULL AS order_amt,
+//         NULL AS order_gst_amt,
+//         itm.sku_name,
+//         NULL AS segment_id,
+//         NULL AS outlet_name,
+//         act.hospital_customer_name,
+//         act.hospital_name,
+//         DATE(act.activity_date) AS activity_date, 
+//         act.zone_id,
+//         act.division_m,
+//         act.remark, 
+//         act.follow_up,
+//         'activity' AS source
+//     FROM 
+//         crm_dev_db.cor_outlet_activity_m act
+//         LEFT JOIN crm_dev_db.cor_sku_m itm ON act.item_id = itm.sku_id
+//     WHERE 
+//         act.outlet_id = '${req.body.Outletid}'
+//         AND act.enter_by = '${req.body.enterBy}'
+//     ORDER BY 
+//         act.enter_date DESC
+//     LIMIT 2
+// )
+// ORDER BY 
+//     date DESC;
+
+//     `, (err, res) => {
+//     console.log("osbss: ", res);
+//     if (err) {
+//       result({ error: true, data: "Something Went Wrong" });
+//     }
+//     result({ error: false, data: res });
+//   });
+// };
+
+
+
 reports.LastTwovisit_OrderHistory = (req, result) => {
-  sql.query(`
-      (
+  const { outlet_id, enter_by } = req.body;
+
+  const query = `
+    WITH last_order_date AS (
+        SELECT DATE(MAX(enter_date)) AS visit_date
+        FROM crm_dev_db.cor_order_m
+        WHERE outlet_id = ? AND enter_by = ?
+    ),
+    last_activity_date AS (
+        SELECT DATE(MAX(enter_date)) AS visit_date
+        FROM crm_dev_db.cor_outlet_activity_m
+        WHERE outlet_id = ? AND enter_by = ?
+    )
+
+    -- Orders
     SELECT 
         m.order_id AS m_orderID,
         m.enter_date AS date, 
@@ -103,15 +214,13 @@ reports.LastTwovisit_OrderHistory = (req, result) => {
         JOIN crm_dev_db.cor_sku_m itm ON d.item_id = itm.sku_id
         JOIN crm_dev_db.cor_outlet_m outlet ON m.outlet_id = outlet.outlet_id
     WHERE 
-        m.outlet_id = '${req.body.Outletid}'
-        AND m.enter_by = '${req.body.enterBy}'
-        AND DATE(m.enter_date) BETWEEN CURDATE() - INTERVAL 365 DAY AND CURDATE() - INTERVAL 1 DAY
-    ORDER BY 
-        m.enter_date DESC
-    LIMIT 2
-)
-UNION ALL
-(
+        m.outlet_id = ?
+        AND m.enter_by = ?
+        AND DATE(m.enter_date) = (SELECT visit_date FROM last_order_date)
+
+    UNION ALL
+
+    -- Activities
     SELECT 
         act.id AS m_orderID, 
         act.enter_date AS date, 
@@ -144,23 +253,22 @@ UNION ALL
         crm_dev_db.cor_outlet_activity_m act
         LEFT JOIN crm_dev_db.cor_sku_m itm ON act.item_id = itm.sku_id
     WHERE 
-        act.outlet_id = '${req.body.Outletid}'
-        AND act.enter_by = '${req.body.enterBy}'
-    ORDER BY 
-        act.enter_date DESC
-    LIMIT 2
-)
-ORDER BY 
-    date DESC;
+        act.outlet_id = ?
+        AND act.enter_by = ?
+        AND DATE(act.enter_date) = (SELECT visit_date FROM last_activity_date)
 
-    `, (err, res) => {
-    console.log("osbss: ", res);
+    ORDER BY date DESC;
+  `;
+
+  sql.query(query, [outlet_id, enter_by, outlet_id, enter_by, outlet_id, enter_by, outlet_id, enter_by], (err, res) => {
     if (err) {
-      result({ error: true, data: "Something Went Wrong" });
+      console.log("Error:", err);
+      return result({ error: true, data: "Something Went Wrong" });
     }
     result({ error: false, data: res });
   });
 };
+
 
 reports.Eodfetch = (req, result) => {
   let query = `
@@ -262,50 +370,48 @@ reports.Eodfetch = (req, result) => {
   });
 };
 
-
-
-
-
-
-
-
 reports.getOrdersAndActivitiesByDate = (req, result) => {
   const enter_by = req.body.enterBy;
   const selected_date = req.body.enter_date;
 
   const query = `
-    (
-      SELECT 
-          outlet.outlet_name,
-          TIME_FORMAT(CONVERT_TZ(m.enter_date, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
-          m.order_lat AS lat, 
-          m.order_lag AS lng, 
-          'O' AS source
-      FROM 
-          crm_dev_db.cor_order_m m
-          JOIN crm_dev_db.cor_outlet_m outlet ON m.outlet_id = outlet.outlet_id
-      WHERE 
-          m.enter_by = ? 
-          AND DATE(m.enter_date) = ? 
-    )
-    UNION ALL
-    (
-      SELECT 
-          outlet.outlet_name,
-          TIME_FORMAT(CONVERT_TZ(act.enter_date, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
-          act.act_lat AS lat, 
-          act.act_long AS lng, 
-          'A' AS source
-      FROM 
-          crm_dev_db.cor_outlet_activity_m act
-          LEFT JOIN crm_dev_db.cor_outlet_m outlet ON act.outlet_id = outlet.outlet_id
-      WHERE 
-          act.enter_by = ? 
-          AND DATE(act.enter_date) = ? 
-    )
-    ORDER BY 
-        date ASC; 
-  `;
+  (
+    SELECT 
+        outlet.outlet_name,
+        TIME_FORMAT(CONVERT_TZ(m.enter_date, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
+        m.order_lat AS lat, 
+        m.order_lag AS lng, 
+        'O' AS source
+    FROM 
+        crm_dev_db.cor_order_m m
+        JOIN crm_dev_db.cor_outlet_m outlet ON m.outlet_id = outlet.outlet_id
+    WHERE 
+        m.enter_by = ? 
+        AND DATE(m.enter_date) = ?
+        AND m.order_lat IS NOT NULL AND m.order_lat <> '' AND m.order_lat <> '...'
+        AND m.order_lag IS NOT NULL AND m.order_lag <> '' AND m.order_lag <> '...'
+  )
+  UNION ALL
+  (
+    SELECT 
+        outlet.outlet_name,
+        TIME_FORMAT(CONVERT_TZ(act.enter_date, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
+        act.act_lat AS lat, 
+        act.act_long AS lng, 
+        'A' AS source
+    FROM 
+        crm_dev_db.cor_outlet_activity_m act
+        LEFT JOIN crm_dev_db.cor_outlet_m outlet ON act.outlet_id = outlet.outlet_id
+    WHERE 
+        act.enter_by = ? 
+        AND DATE(act.enter_date) = ?
+        AND act.act_lat IS NOT NULL AND act.act_lat <> '' AND act.act_lat <> '...'
+        AND act.act_long IS NOT NULL AND act.act_long <> '' AND act.act_long <> '...'
+  )
+  ORDER BY 
+      date ASC;
+`;
+
 
   sql.query(query, [enter_by, selected_date, enter_by, selected_date], async (err, res) => {
     if (err) {
@@ -635,8 +741,8 @@ reports.monthlyAttendance = (req, result) => {
   sql.query(`SELECT 
     IFNULL(a.attendance_id, NULL) AS attendance_id,
     d.punch_date, 
-    COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
-    COALESCE(TIME(a.punch_out), '00:00:00') AS punch_out_time,
+    DATE_FORMAT(CONVERT_TZ(a.punch_in, 'UTC', 'Asia/Kolkata'), '%h:%i %p') AS punch_in_time,
+DATE_FORMAT(CONVERT_TZ(a.punch_out, 'UTC', 'Asia/Kolkata'), '%h:%i %p') AS punch_out_time,
     e.emp_id,
     TRIM(e.emp_code) AS emp_code, 
     TRIM(e.user_name) AS user_name, 

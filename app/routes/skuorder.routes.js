@@ -17,6 +17,7 @@ module.exports = app => {
     router.post("/UpdateMultipleFollowUpTasks", Skuorder.UpdateMultipleFollowUpTasks);
     router.post("/ActivityHospital", Skuorder.ActivityHospital);
     router.post("/GetPendingTaskCount", Skuorder.GetPendingTaskCount);
+    router.post("/GetPendingTaskDates", Skuorder.GetPendingTaskDates);
     app.use('/', router);
   };
   

@@ -102,8 +102,12 @@ exports.GetPendingTaskCount = (req, res) => {
   console.log('listAuth -------', data);
   res.send(data);
 });
+};
 
-
+exports.GetPendingTaskDates = (req, res) => {
+  skuorderModel.GetPendingTaskDates(req,(data) => {
+  res.send(data);
+});
 };
 
 exports.ActivityHospital = (req, res) => {
