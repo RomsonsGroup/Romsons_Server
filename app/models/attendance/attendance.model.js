@@ -31,8 +31,31 @@ attendance.ValidationAttendance = (req, result) => {
 };
 
 attendance.attendance_punch_in = (req, result) => {
-  // SQL query using parameterized values
-  const attendanceQuery = `
+  const empId = req.body.empid;
+
+  // Step 1: Check employee status
+  const statusCheckQuery = `SELECT status FROM crm_dev_db.cor_emp_m WHERE emp_id = ?`;
+
+  sql.query(statusCheckQuery, [empId], (err, statusRes) => {
+    if (err) {
+      result({ error: true, data: err.message });
+      return;
+    }
+
+    if (statusRes.length === 0) {
+      result({ error: true, message: "Employee not found." });
+      return;
+    }
+
+    const empStatus = statusRes[0].status;
+
+    if (empStatus !== 'A') {
+      result({ error: false, message: "You are not an active employee." });
+      return;
+    }
+
+    // Step 2: Proceed to punch-in if active
+    const attendanceQuery = `
       INSERT INTO crm_dev_db.cor_attendance_m
         (attendance_id, emp_id, shift, punch_date, punch_in, in_lat, in_lng, enter_by, enter_date, in_remark, work_place, in_address, app_version)
       SELECT
@@ -42,48 +65,38 @@ attendance.attendance_punch_in = (req, result) => {
         DUAL
       WHERE
         NOT EXISTS (
-          SELECT
-            1
-          FROM
-            crm_dev_db.cor_attendance_m
-          WHERE
-            emp_id = ?
-            AND punch_date = CURDATE()
+          SELECT 1 FROM crm_dev_db.cor_attendance_m
+          WHERE emp_id = ? AND punch_date = CURDATE()
         );
-  `;
+    `;
 
-  // Parameters array
-  const params = [
-    req.body.empid,         // Employee ID
-    req.body.in_lat,        // Latitude
-    req.body.in_lng,        // Longitude
-    req.body.enterBy,       // Entered by
-    req.body.emp_in_rmrk,   // Remark
-    req.body.emp_workplace, // Workplace
-    req.body.emp_in_address, // Address
-    req.body.app_version,   // App version
-    req.body.empid,         // Employee ID (for WHERE clause)
-  ];
+    const params = [
+      empId,
+      req.body.in_lat,
+      req.body.in_lng,
+      req.body.enterBy,
+      req.body.emp_in_rmrk,
+      req.body.emp_workplace,
+      req.body.emp_in_address,
+      req.body.app_version,
+      empId
+    ];
 
-  // Execute the query
-  sql.query(attendanceQuery, params, (err, res) => {
-    console.log("Executing Query: ", attendanceQuery);
-    console.log("With Parameters: ", params);
+    sql.query(attendanceQuery, params, (err, res) => {
+      if (err) {
+        result({ error: true, data: err.message });
+        return;
+      }
 
-    if (err) {
-      console.error("Database Error: ", err); // Log the actual error for debugging
-      result({ error: true, data: err.message }); // Respond with the error message
-      return;
-    }
-
-    // Check if a row was inserted
-    if (res.affectedRows > 0) {
-      result({ success: false, message: "Attendance recorded successfully." });
-    } else {
-      result({ msg: true, message: "Attendance already exists for today." });
-    }
+      if (res.affectedRows > 0) {
+        result({ success: true, message: "Attendance recorded successfully." });
+      } else {
+        result({ msg: true, message: "Attendance already exists for today." });
+      }
+    });
   });
 };
+
 
 attendance.attendance_punchout = (req, result) => {
   const currentHour = new Date().getHours();
