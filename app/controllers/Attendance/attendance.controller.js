@@ -128,4 +128,13 @@ exports.ValidationAttendance = (req, res) => {
   
   
   };
+
+
+  exports.leaveReportSummary = (req, res) => {
+    attendancemodel.leaveReportSummary(req,(data) => {
+      res.send(data);
+    });
+  
+  
+  };
   

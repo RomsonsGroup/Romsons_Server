@@ -1218,46 +1218,46 @@ WHEN a.leave_status = 2 THEN 'L' -- Leave applied
             .format('h:mm A');
         }
 
-        
+
         // Compute total working hours accurately
         let totalHours = 0;
         let totalMinutes = 0;
 
         // Compute total working hours accurately
         if (record.punch_in_time !== '00:00:00' && record.punch_out_time !== '00:00:00') {
-        const punchInMoment = moment(record.punch_in_time, 'h:mm A');
-        const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
+          const punchInMoment = moment(record.punch_in_time, 'h:mm A');
+          const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
 
-        // Calculate duration
-        const duration = moment.duration(punchOutMoment.diff(punchInMoment));
-        totalHours = Math.floor(duration.asHours());
-        totalMinutes = duration.minutes();
+          // Calculate duration
+          const duration = moment.duration(punchOutMoment.diff(punchInMoment));
+          totalHours = Math.floor(duration.asHours());
+          totalMinutes = duration.minutes();
 
-        // Format total working hours
-        record.total_hours = `${totalHours}:${totalMinutes.toString().padStart(2, '0')}`;
-    } else {
-        record.total_hours = '0:00';
-    }
+          // Format total working hours
+          record.total_hours = `${totalHours}:${totalMinutes.toString().padStart(2, '0')}`;
+        } else {
+          record.total_hours = '0:00';
+        }
 
-    console.log(record.attendance_status,"record.attendance_status");
-    
-    // Preserve WEO & PHY, don't overwrite if already set
-if (!['WEO', 'PHY'].includes(record.attendance_status)) {
-    // *Determine Attendance Status based on total_hours*
-    if (record.leave_status === 2) {
-      record.attendance_status = 'L'; // Leave applied
-  } else if (record.leave_status === 1) {
-      record.attendance_status = 'A'; // Absent
-  } else if (record.punch_in_time === '00:00:00' && record.punch_out_time === '00:00:00') {
-      record.attendance_status = 'A'; // Absent on non-holiday
-  } else if (totalHours >= 8) {
-      record.attendance_status = 'P'; // Present full day
-  } else if (totalHours >= 4) {
-      record.attendance_status = 'ABSHD'; // Half-day absent
-  } else {
-      record.attendance_status = 'A'; // Default absent
-  }
-}
+        console.log(record.attendance_status, "record.attendance_status");
+
+        // Preserve WEO & PHY, don't overwrite if already set
+        if (!['WEO', 'PHY'].includes(record.attendance_status)) {
+          // *Determine Attendance Status based on total_hours*
+          if (record.leave_status === 2) {
+            record.attendance_status = 'L'; // Leave applied
+          } else if (record.leave_status === 1) {
+            record.attendance_status = 'A'; // Absent
+          } else if (record.punch_in_time === '00:00:00' && record.punch_out_time === '00:00:00') {
+            record.attendance_status = 'A'; // Absent on non-holiday
+          } else if (totalHours >= 8) {
+            record.attendance_status = 'P'; // Present full day
+          } else if (totalHours >= 4) {
+            record.attendance_status = 'ABSHD'; // Half-day absent
+          } else {
+            record.attendance_status = 'A'; // Default absent
+          }
+        }
         //attendance status
 
 
@@ -1567,6 +1567,87 @@ attendance.HolidayList = (req, result) => {
     return result({ error: false, data: res });
   });
 };
+
+
+attendance.leaveReportSummary = (req, result) => {
+  const { fromDate, toDate } = req.body;
+
+  const query = `
+    SELECT 
+      lm.emp_id,
+      em.user_name,
+      lm.leave_type,
+      DATE_FORMAT(lm.start_date, '%Y-%m-%d') AS start_date,
+      DATE_FORMAT(lm.end_date, '%Y-%m-%d') AS end_date,
+      CONCAT(DATE_FORMAT(lm.start_date, '%d-%b-%Y'), ' - ', DATE_FORMAT(lm.end_date, '%d-%b-%Y')) AS leave_from_to,
+      lm.leave_days,
+      lm.leave_reason,
+      CONCAT(lm.reporting_to, ' - ', r.user_name) AS reporting_to_name,
+      CONCAT(lm.approved_by, ' - ', ab.user_name) AS approved_by,
+      DATE_FORMAT(lm.approved_date, '%Y-%m-%d') AS approved_date,
+      lm.status,
+      CASE 
+  WHEN lm.status = 3 THEN 'Rejected'
+  WHEN lm.status = 1 AND lm.approved_by IS NOT NULL THEN 'Accepted'
+  WHEN lm.status = 1 AND lm.approved_by IS NULL THEN 'Pending'
+  ELSE 'Unknown'
+END AS status,
+
+      (
+        COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
+        COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
+        COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
+      ) AS total_allocated_leave,
+      (
+        SELECT 
+          COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
+          COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
+          COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+        FROM crm_dev_db.cor_leave_m lm2
+        WHERE lm2.emp_id = lm.emp_id
+          AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+      ) AS total_availed_leave,
+      (
+        (
+          COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
+          COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
+          COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
+        ) -
+        (
+          SELECT 
+            COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
+            COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
+            COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+          FROM crm_dev_db.cor_leave_m lm2
+          WHERE lm2.emp_id = lm.emp_id
+            AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+        )
+      ) AS total_balance_leave
+    FROM crm_dev_db.cor_leave_m lm
+    JOIN crm_dev_db.cor_emp_m em ON em.emp_id = lm.emp_id
+    LEFT JOIN crm_dev_db.cor_leave_summary sm ON sm.emp_id = lm.emp_id
+    LEFT JOIN crm_dev_db.cor_emp_m r ON r.emp_id = lm.reporting_to
+    LEFT JOIN crm_dev_db.cor_emp_m ab ON ab.emp_id = lm.approved_by
+    WHERE lm.start_date <= '${toDate}'
+      AND lm.end_date >= '${fromDate}'
+    GROUP BY lm.id
+    ORDER BY FIELD(lm.status, 'Pending', 'Accepted', 'Rejected'), lm.start_date ASC;
+  `;
+
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      console.log("Query Result:", res);
+      result({ error: false, data: res });
+    }
+  });
+};
+
+
 
 
 

@@ -19,7 +19,7 @@ module.exports = app => {
     router.get("/leave_type", Attendance.LeaveType);
     router.post("/HolidayList", Attendance.HolidayList);
     router.get("/leave_history", Attendance.leave_history);
-
+    router.post("/leaveReportSummary", Attendance.leaveReportSummary);
    
     app.use('/', router);
   };

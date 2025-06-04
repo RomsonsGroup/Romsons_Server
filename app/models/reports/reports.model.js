@@ -171,12 +171,12 @@ reports.LastTwovisit_OrderHistory = (req, result) => {
     WITH last_order_date AS (
         SELECT DATE(MAX(enter_date)) AS visit_date
         FROM crm_dev_db.cor_order_m
-        WHERE outlet_id = ? AND enter_by = ?
+        WHERE outlet_id = ? AND enter_by = ? AND DATE(enter_date) < CURRENT_DATE
     ),
     last_activity_date AS (
         SELECT DATE(MAX(enter_date)) AS visit_date
         FROM crm_dev_db.cor_outlet_activity_m
-        WHERE outlet_id = ? AND enter_by = ?
+        WHERE outlet_id = ? AND enter_by = ? AND DATE(enter_date) < CURRENT_DATE
     )
 
     -- Orders
@@ -268,6 +268,7 @@ reports.LastTwovisit_OrderHistory = (req, result) => {
     result({ error: false, data: res });
   });
 };
+
 
 
 reports.Eodfetch = (req, result) => {
