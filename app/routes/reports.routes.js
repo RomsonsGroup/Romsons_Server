@@ -41,6 +41,8 @@ module.exports = app => {
     router.post("/Regulizationidrejected", Reports.Regulizationidrejected);
     router.post("/RejectedRegularizationList", Reports.RejectedRegularizationList);
     router.post("/ApprovedRegularizationList", Reports.ApprovedRegularizationList);
+    router.post("/getPendingRegularizationCount", Reports.getPendingRegularizationCount);
+    router.post("/getPendingLeaveCount", Reports.getPendingLeaveCount);
     router.post("/EodDatebutton", Reports.EodDatebutton);
     router.post("/EodOrderbutton", Reports.EodOrderbutton);
     router.post("/EodDateReturnbutton", Reports.EodDateReturnbutton);

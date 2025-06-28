@@ -762,6 +762,7 @@ DATE_FORMAT(CONVERT_TZ(a.punch_out, 'UTC', 'Asia/Kolkata'), '%h:%i %p') AS punch
         WHEN DAYOFWEEK(d.punch_date) = 1 
              AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' 
         WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A' 
+            WHEN a.status = 1 AND TIME(CONVERT_TZ(a.punch_in, 'UTC', 'Asia/Kolkata')) > '10:30:00' THEN 'ABSHD'
         WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' 
         WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' 
         ELSE 'A' 
@@ -774,10 +775,30 @@ DATE_FORMAT(CONVERT_TZ(a.punch_out, 'UTC', 'Asia/Kolkata'), '%h:%i %p') AS punch
     END AS leave_type,
 
     -- Total hours worked
-    IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL, 
-        TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out), 
-        0
-    ) AS total_hours
+    IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL,
+  CONCAT(
+    LPAD(FLOOR(
+      TIMESTAMPDIFF(
+        MINUTE,
+        CONVERT_TZ(a.punch_in, 'UTC', 'Asia/Kolkata'),
+        CONVERT_TZ(a.punch_out, 'UTC', 'Asia/Kolkata')
+      ) / 60
+    ), 2, '0'),
+    'h:',
+    LPAD(
+      MOD(
+        TIMESTAMPDIFF(
+          MINUTE,
+          CONVERT_TZ(a.punch_in, 'UTC', 'Asia/Kolkata'),
+          CONVERT_TZ(a.punch_out, 'UTC', 'Asia/Kolkata')
+        ), 60
+      ), 2, '0'
+    ),
+    'm'
+  ),
+  '00h:00m'
+) AS total_hours
+
 
 FROM 
     (SELECT 
@@ -1170,7 +1191,7 @@ WHERE
     AND l.approved_by IS NOT NULL 
     AND l.approved_date IS NOT NULL;  
   `, (err, res) => {
- 
+
 
     if (err) {
       result({ error: true, data: "Something Went Wrong" });
@@ -1216,23 +1237,108 @@ reports.getAttendanceHistory = (req, result) => {
 
 
 
+// reports.Leaveidapproval = (req, result) => {
+  
+//   const { leaveIds, empidd } = req.body;
+//   console.log(leaveIds,"testS");
+
+
+  
+//   const query = `
+//     UPDATE crm_dev_db.cor_leave_m 
+//     SET approved_by = ?, approved_date = NOW() 
+//     WHERE id IN (${leaveIds.map(() => "?").join(", ")})
+//   `;
+
+//   sql.query(query, [empidd, ...leaveIds], (err, res) => {
+//     if (err) {
+//       console.error("Approval Error:", err);
+//       return result({ error: true, message: "Something went wrong" });
+//     }
+
+//     return result({ error: false, message: "Leaves approved successfully", data: res });
+//   });
+// };
+
 reports.Leaveidapproval = (req, result) => {
   const { leaveIds, empidd } = req.body;
-  const query = `
+
+  const placeholders = leaveIds.map(() => "?").join(", ");
+  const updateLeaveQuery = `
     UPDATE crm_dev_db.cor_leave_m 
-    SET approved_by = ?, approved_date = NOW() 
-    WHERE id IN (${leaveIds.map(() => "?").join(", ")})
+    SET approved_by = ?, approved_date = NOW(), status = 2
+    WHERE id IN (${placeholders})
   `;
 
-  sql.query(query, [empidd, ...leaveIds], (err, res) => {
+  sql.query(updateLeaveQuery, [empidd, ...leaveIds], (err, updateRes) => {
     if (err) {
       console.error("Approval Error:", err);
-      return result({ error: true, message: "Something went wrong" });
+      return result({ error: true, message: "Something went wrong while approving leave" });
     }
 
-    return result({ error: false, message: "Leaves approved successfully", data: res });
+    const fetchLeaveQuery = `
+      SELECT 
+        id, emp_id, start_date, end_date, leave_type, status AS leave_status
+      FROM crm_dev_db.cor_leave_m 
+      WHERE id IN (${placeholders})
+    `;
+
+    sql.query(fetchLeaveQuery, [...leaveIds], (err, leaveRows) => {
+      if (err) {
+        console.error("Leave Fetch Error:", err);
+        return result({ error: true, message: "Something went wrong while fetching leave details" });
+      }
+
+      const insertRows = [];
+
+      leaveRows.forEach(row => {
+        let start = new Date(row.start_date);
+        const end = new Date(row.end_date || row.start_date);
+
+        while (start <= end) {
+          const punchDate = start.toISOString().split("T")[0];
+
+          insertRows.push(`
+            (crm_dev_db.all_auto_no(55), ${row.emp_id}, '${punchDate}', 'D', 1, NOW(), '${row.leave_status}', '${row.leave_type}', '${row.leave_status}', 'N')
+          `);
+
+          start = new Date(start.getTime() + 24 * 60 * 60 * 1000); // Next day
+        }
+      });
+
+      if (insertRows.length === 0) {
+        return result({
+          error: false,
+          message: "Leave approved, but no valid attendance dates found."
+        });
+      }
+
+      const finalInsertQuery = `
+        INSERT INTO crm_dev_db.cor_attendance_m 
+        (attendance_id, emp_id, punch_date, shift, enter_by, enter_date, status, leave_type, leave_status, eod)
+        VALUES ${insertRows.join(",\n")}
+      `;
+
+      sql.query(finalInsertQuery, (err, insertRes) => {
+        if (err) {
+          console.error("Attendance Insert Error:", err);
+          return result({ error: true, message: "Leave approved but failed to insert attendance" });
+        }
+
+        return result({
+          error: false,
+          message: "Leave approved and attendance inserted successfully",
+          attendance_inserted: insertRes.affectedRows,
+          data: updateRes
+        });
+      });
+    });
   });
 };
+
+
+
+
 
 
 
@@ -1276,7 +1382,7 @@ reports.Leaverejectedlist = (req, result) => {
       AND l.enter_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
       AND l.status = 3;  -- Status = 3 for rejected leaves
   `, (err, res) => {
-  
+
 
     if (err) {
       result({ error: true, data: "Something Went Wrong" });
@@ -1334,25 +1440,31 @@ reports.Leavestatuslist = (req, result) => {
 };
 
 
+reports.getPendingLeaveCount = (req, result) => {
+  const empId = req.body.empidd; // Reporting manager ka emp_id
 
+  const query = `
+    SELECT 
+  COUNT(DISTINCT l.id) AS pending_count
+FROM 
+  crm_dev_db.cor_leave_m l
+JOIN 
+  crm_dev_db.cor_emp_m e 
+  ON l.emp_id = e.emp_id 
+WHERE 
+  l.reporting_to = ?
+  AND l.status = 1;
+  `;
 
+  sql.query(query, [empId], (err, res) => {
+    if (err) {
+      console.error("Error fetching pending regularization count:", err);
+      return result({ error: true, data: "Something went wrong" });
+    }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    result({ error: false, data: res[0] });
+  });
+};
 
 
 
@@ -1697,7 +1809,7 @@ WHERE emp_id = ? AND punch_date = ? AND punch_out IS NULL
                 console.error("Check Attendance Error:", err);
                 return reject(err);
               }
-             
+
 
               if (attendanceRes.length > 0) {
                 // Update existing record
@@ -1829,7 +1941,7 @@ reports.RejectedRegularizationList = (req, result) => {
       r.reporting_to = '${req.body.empidd}' 
       AND r.status = 'R';  -- Status 'R' for rejected regularizations
   `, (err, res) => {
-   
+
     if (err) {
       result({ error: true, data: "Something Went Wrong" });
     } else {
@@ -1860,7 +1972,7 @@ reports.ApprovedRegularizationList = (req, result) => {
       r.reporting_to = '${req.body.empidd}' 
       AND r.status = 'A';  -- Status 'R' for rejected regularizations
   `, (err, res) => {
-   
+
     if (err) {
       result({ error: true, data: "Something Went Wrong" });
     } else {
@@ -1869,6 +1981,31 @@ reports.ApprovedRegularizationList = (req, result) => {
   });
 };
 
+reports.getPendingRegularizationCount = (req, result) => {
+  const empId = req.body.empidd; // Reporting manager ka emp_id
+
+  const query = `
+    SELECT 
+      COUNT(*) AS pending_count
+    FROM 
+      crm_dev_db.cor_regulization_m r
+    JOIN 
+      crm_dev_db.cor_emp_m e 
+      ON r.enter_by = e.emp_id 
+    WHERE 
+      r.Reporting_to = ? 
+      AND r.status = 'P'
+  `;
+
+  sql.query(query, [empId], (err, res) => {
+    if (err) {
+      console.error("Error fetching pending regularization count:", err);
+      return result({ error: true, data: "Something went wrong" });
+    }
+
+    result({ error: false, data: res[0] });
+  });
+};
 
 
 

@@ -64,6 +64,20 @@ exports.ValidationAttendance = (req, res) => {
 
   }
 
+  exports.attendance_monthly = (req, res) => {
+    attendancemodel.attendance_monthly(req,(data) => {
+      res.send(data);
+    });
+
+  }
+
+  exports.DayWiseAttendanceReport = (req, res) => {
+    attendancemodel.DayWiseAttendanceReport(req,(data) => {
+      res.send(data);
+    });
+
+  }
+
     exports.attandance_summary = (req, res) => {
       attendancemodel.attandance_summary(req,(data) => {
     

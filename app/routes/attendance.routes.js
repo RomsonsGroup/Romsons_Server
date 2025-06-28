@@ -15,6 +15,8 @@ module.exports = app => {
     router.post("/punchInOutTime", Attendance.punchInOutTime);
     router.post("/shiftDetails", Attendance.shiftDetails);
     router.get("/attendance_count", Attendance.attandance_count);
+    router.get("/attendance_monthly", Attendance.attendance_monthly);
+    router.get("/DayWiseAttendanceReport", Attendance.DayWiseAttendanceReport);
     router.get("/attendance_summary", Attendance.attandance_summary);
     router.get("/leave_type", Attendance.LeaveType);
     router.post("/HolidayList", Attendance.HolidayList);

@@ -30,6 +30,80 @@ attendance.ValidationAttendance = (req, result) => {
   });
 };
 
+// attendance.attendance_punch_in = (req, result) => {
+//   const empId = req.body.empid;
+
+//   // Step 1: Check employee status
+//   const statusCheckQuery = `SELECT status FROM crm_dev_db.cor_emp_m WHERE emp_id = ?`;
+
+//   sql.query(statusCheckQuery, [empId], (err, statusRes) => {
+//     if (err) {
+//       result({ error: true, data: err.message });
+//       return;
+//     }
+
+//     if (statusRes.length === 0) {
+//       result({ error: true, message: "Employee not found." });
+//       return;
+//     }
+
+//     const empStatus = statusRes[0].status;
+
+//     if (empStatus !== 'A') {
+//       result({ error: false, message: "You are not an active employee." });
+//       return;
+//     }
+
+//     // Step 2: Proceed to punch-in if active
+//     const attendanceQuery = `
+//       INSERT INTO crm_dev_db.cor_attendance_m
+//         (attendance_id, emp_id, shift, punch_date, punch_in, in_lat, in_lng, enter_by, enter_date, in_remark, work_place, in_address, app_version)
+//       SELECT
+//         crm_dev_db.all_auto_no(55),
+//         ?, 'D', CURDATE(), NOW(), ?, ?, ?, NOW(), ?, ?, ?, ?
+//       FROM
+//         DUAL
+//       WHERE
+//         NOT EXISTS (
+//           SELECT 1 FROM crm_dev_db.cor_attendance_m
+//           WHERE emp_id = ? AND punch_date = CURDATE()
+//         );
+//     `;
+
+//     const params = [
+//       empId,
+//       req.body.in_lat,
+//       req.body.in_lng,
+//       req.body.enterBy,
+//       req.body.emp_in_rmrk,
+//       req.body.emp_workplace,
+//       req.body.emp_in_address,
+//       req.body.app_version,
+//       empId
+//     ];
+
+//     sql.query(attendanceQuery, params, (err, res) => {
+//       if (err) {
+//         result({ error: true, data: err.message });
+//         return;
+//       }
+
+//       if (res.affectedRows > 0) {
+//         result({ success: true, message: "Attendance recorded successfully." });
+//       } else {
+//         result({ msg: true, message: "Attendance already exists for today." });
+//       }
+//     });
+//   });
+// };
+
+///////////////add
+
+
+
+////////////////////add new logic=> user can not punch attendance, same day leave applied already//////////////////
+
+
 attendance.attendance_punch_in = (req, result) => {
   const empId = req.body.empid;
 
@@ -54,56 +128,77 @@ attendance.attendance_punch_in = (req, result) => {
       return;
     }
 
-    // Step 2: Proceed to punch-in if active
-    const attendanceQuery = `
-      INSERT INTO crm_dev_db.cor_attendance_m
-        (attendance_id, emp_id, shift, punch_date, punch_in, in_lat, in_lng, enter_by, enter_date, in_remark, work_place, in_address, app_version)
-      SELECT
-        crm_dev_db.all_auto_no(55),
-        ?, 'D', CURDATE(), NOW(), ?, ?, ?, NOW(), ?, ?, ?, ?
-      FROM
-        DUAL
-      WHERE
-        NOT EXISTS (
-          SELECT 1 FROM crm_dev_db.cor_attendance_m
-          WHERE emp_id = ? AND punch_date = CURDATE()
-        );
-    `;
+    // ✅ Step 2: Check if user has already applied for leave today
+    const leaveCheckQuery = `
+      SELECT 1 FROM crm_dev_db.cor_leave_m 
+      WHERE emp_id = ? 
+        AND CURDATE() BETWEEN start_date AND end_date
+        AND status IN (1, 2)`;
 
-    const params = [
-      empId,
-      req.body.in_lat,
-      req.body.in_lng,
-      req.body.enterBy,
-      req.body.emp_in_rmrk,
-      req.body.emp_workplace,
-      req.body.emp_in_address,
-      req.body.app_version,
-      empId
-    ];
-
-    sql.query(attendanceQuery, params, (err, res) => {
+    sql.query(leaveCheckQuery, [empId], (err, leaveRes) => {
       if (err) {
-        result({ error: true, data: err.message });
+        result({ error: true, data: "Error checking leave status." });
         return;
       }
 
-      if (res.affectedRows > 0) {
-        result({ success: true, message: "Attendance recorded successfully." });
-      } else {
-        result({ msg: true, message: "Attendance already exists for today." });
+      if (leaveRes.length > 0) {
+        result({ error: true, message: "You have already applied for leave today. Punch-in not allowed." });
+        return;
       }
+
+      // ✅ Step 3: Proceed to punch-in if no leave found
+      const attendanceQuery = `
+        INSERT INTO crm_dev_db.cor_attendance_m
+          (attendance_id, emp_id, shift, punch_date, punch_in, in_lat, in_lng, enter_by, enter_date, in_remark, work_place, in_address, app_version)
+        SELECT
+          crm_dev_db.all_auto_no(55),
+          ?, 'D', CURDATE(), NOW(), ?, ?, ?, NOW(), ?, ?, ?, ?
+        FROM
+          DUAL
+        WHERE
+          NOT EXISTS (
+            SELECT 1 FROM crm_dev_db.cor_attendance_m
+            WHERE emp_id = ? AND punch_date = CURDATE()
+          );
+      `;
+
+      const params = [
+        empId,
+        req.body.in_lat,
+        req.body.in_lng,
+        req.body.enterBy,
+        req.body.emp_in_rmrk,
+        req.body.emp_workplace,
+        req.body.emp_in_address,
+        req.body.app_version,
+        empId
+      ];
+
+      sql.query(attendanceQuery, params, (err, res) => {
+        if (err) {
+          result({ error: true, data: err.message });
+          return;
+        }
+
+        if (res.affectedRows > 0) {
+          result({ success: true, message: "Attendance recorded successfully." });
+        } else {
+          result({ msg: true, message: "Attendance already exists for today." });
+        }
+      });
     });
   });
 };
 
 
 attendance.attendance_punchout = (req, result) => {
-  const currentHour = new Date().getHours();
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
 
   // Check if the current time is after 9 PM
-  if (currentHour >= 21) {
-    result({ error: true, message: "You are not allowed to punch out after 9 PM" });
+  if (currentHour > 19 || (currentHour === 19 && currentMinute > 30)) {
+    result({ error: true, message: "You are not allowed to punch out after 7:30 PM" });
     return;
   }
 
@@ -147,12 +242,6 @@ attendance.attendance_punchout = (req, result) => {
       }
     });
 };
-
-
-
-
-
-
 
 
 
@@ -320,17 +409,22 @@ attendance.attendance_punchout = (req, result) => {
 
 
 attendance.LeaveApp = (req, result) => {
-  const { empID, rpPerson, fromDate, toDate, numofdays, leavereason, enterBy } = req.body;
+  const { empID, rpPerson, fromDate, toDate, numofdays, leavereason, enterBy, leaveType } = req.body;
 
   // Determine initial leave type based on number of days
-  let conditionalLeaveType;
-  if (numofdays === 1) {
-    conditionalLeaveType = 'SL';
-  } else if (numofdays === 2) {
-    conditionalLeaveType = 'CL';
-  } else {
-    conditionalLeaveType = 'EL';
+  // Use leaveType from frontend if passed, otherwise fallback logic
+  let conditionalLeaveType = leaveType;
+
+  if (!conditionalLeaveType) {
+    if (numofdays === 1) {
+      conditionalLeaveType = 'SL';
+    } else if (numofdays === 2) {
+      conditionalLeaveType = 'CL';
+    } else {
+      conditionalLeaveType = 'EL';
+    }
   }
+
 
   // Query to check leave balances for the employee
   const leaveBalanceQuery = `
@@ -693,57 +787,6 @@ attendance.LeaveCount = (req, result) => {
 //     });
 //   }
 // };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 // attendance.attandance_count = (req, result) => {
@@ -1136,7 +1179,7 @@ attendance.attandance_count = (req, result) => {
 
   if (user.role === 1) {
     let query = `
-     SELECT 
+      SELECT 
         IFNULL(a.attendance_id, NULL) AS attendance_id,
         d.punch_date, 
         COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
@@ -1144,48 +1187,64 @@ attendance.attandance_count = (req, result) => {
         e.emp_id,
         TRIM(e.emp_code) AS emp_code, 
         TRIM(e.user_name) AS user_name, 
+
         'RGPL' AS company_name,
-     
-        -- Attendance status logic with WEO and PHY
-        CASE
-        WHEN h.date IS NULL AND DAYOFWEEK(h.date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Holiday on Sunday without punch-in/out
-            WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY' -- Holiday without punch-in/out
-WHEN a.leave_status = 2 THEN 'L' -- Leave applied
-    WHEN a.leave_status = 1 THEN 'A' -- Absent
-            WHEN h.date IS  NULL AND e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Saturday weekly off for specific state
-            WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Sunday weekly off
-            WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A' -- Absent on non-holiday
-            WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' -- Present for full day
-            WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' -- Half-day absent
-            ELSE 'A' -- Default absent
+
+        CASE 
+          WHEN DAYOFWEEK(d.punch_date) = 1 THEN 
+            CASE
+              WHEN a.leave_status = 2 THEN 'L'
+              WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' 
+              ELSE 
+                CASE 
+                  WHEN a.leave_status = 2 THEN 'L'
+                  WHEN a.leave_status = 1 THEN 'A'
+                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' 
+                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' 
+                  ELSE 'A'
+                END 
+            END
+          ELSE 
+            CASE 
+              WHEN a.leave_status = 2 THEN 'L'
+              WHEN a.leave_status = 1 THEN 'A'
+              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' 
+              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' 
+              ELSE 'A'
+            END
         END AS attendance_status,
 
-        -- Leave type logic
         CASE 
-            WHEN a.leave_status = 2 THEN COALESCE(l.leave_type, '0')  
-            ELSE '0'  
+          WHEN a.leave_status = 2 THEN COALESCE(l.leave_type, '0')  
+          ELSE '0'  
         END AS leave_type,
 
-        -- Total hours worked
+        CASE 
+          WHEN a.leave_status = 2 THEN DATE_FORMAT(l.enter_date, '%Y-%m-%d')
+          ELSE NULL
+        END AS applied_date,
+
+        CASE 
+          WHEN a.leave_status = 2 THEN DATE_FORMAT(l.approved_date, '%Y-%m-%d')
+          ELSE NULL
+        END AS approved_date,
+
         IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL, 
-            TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out), 
-            0
+          TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out), 
+          0
         ) AS total_hours
 
-     FROM 
+      FROM 
         (SELECT ? AS punch_date) d
-     LEFT JOIN 
-        crm_dev_db.cor_emp_m e ON 1 = 1
-     LEFT JOIN 
-        crm_dev_db.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
-     LEFT JOIN 
-        crm_dev_db.cor_leave_m l ON e.emp_id = l.emp_id 
-        AND l.start_date <= d.punch_date 
-        AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
-     LEFT JOIN
-        crm_dev_db.holiday_m h ON FIND_IN_SET(e.state_id, h.state_id) > 0
-  AND h.date = d.punch_date
-     WHERE 
+      LEFT JOIN 
+        romsondb.cor_emp_m e ON 1 = 1
+      LEFT JOIN 
+        romsondb.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+      LEFT JOIN 
+        romsondb.cor_leave_m l ON e.emp_id = l.emp_id 
+          AND l.start_date <= d.punch_date 
+          AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+      WHERE 
         e.status = 'A'
     `;
 
@@ -1210,57 +1269,33 @@ WHEN a.leave_status = 2 THEN 'L' -- Leave applied
             .tz('Asia/Kolkata')
             .format('h:mm A');
         }
-
+      
         if (record.punch_out_time !== '00:00:00') {
           record.punch_out_time = moment
             .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
             .tz('Asia/Kolkata')
             .format('h:mm A');
         }
-
-
-        // Compute total working hours accurately
-        let totalHours = 0;
-        let totalMinutes = 0;
-
-        // Compute total working hours accurately
-        if (record.punch_in_time !== '00:00:00' && record.punch_out_time !== '00:00:00') {
+      
+        // Compute and format total_hours in HH:MM
+        if (
+          record.punch_in_time !== '00:00:00' &&
+          record.punch_out_time !== '00:00:00'
+        ) {
           const punchInMoment = moment(record.punch_in_time, 'h:mm A');
           const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
-
-          // Calculate duration
+      
           const duration = moment.duration(punchOutMoment.diff(punchInMoment));
-          totalHours = Math.floor(duration.asHours());
-          totalMinutes = duration.minutes();
-
-          // Format total working hours
-          record.total_hours = `${totalHours}:${totalMinutes.toString().padStart(2, '0')}`;
+          const totalHours = Math.floor(duration.asHours());
+          const totalMinutes = duration.minutes();
+      
+          record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
+            .toString()
+            .padStart(2, '0')}`;
         } else {
-          record.total_hours = '0:00';
+          record.total_hours = '00:00';
         }
-
-        console.log(record.attendance_status, "record.attendance_status");
-
-        // Preserve WEO & PHY, don't overwrite if already set
-        if (!['WEO', 'PHY'].includes(record.attendance_status)) {
-          // *Determine Attendance Status based on total_hours*
-          if (record.leave_status === 2) {
-            record.attendance_status = 'L'; // Leave applied
-          } else if (record.leave_status === 1) {
-            record.attendance_status = 'A'; // Absent
-          } else if (record.punch_in_time === '00:00:00' && record.punch_out_time === '00:00:00') {
-            record.attendance_status = 'A'; // Absent on non-holiday
-          } else if (totalHours >= 8) {
-            record.attendance_status = 'P'; // Present full day
-          } else if (totalHours >= 4) {
-            record.attendance_status = 'ABSHD'; // Half-day absent
-          } else {
-            record.attendance_status = 'A'; // Default absent
-          }
-        }
-        //attendance status
-
-
+      
         // Ensure consistent format for attendance_id
         if (!record.attendance_id) {
           const fixedPrefix = '100';
@@ -1271,11 +1306,127 @@ WHEN a.leave_status = 2 THEN 'L' -- Leave applied
           const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
           record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
         }
-
+      
         return record;
       });
+      
+      
 
       result({ error: false, data: convertedResults });
+    });
+  } else {
+    result({ error: true, message: "Unauthorized access" });
+  }
+};
+
+
+
+/////////////////////for crm_report////////////////////////////////////
+attendance.attendance_monthly = (req, result) => {
+  const month = req.query.month;
+  const year = req.query.year || new Date().getFullYear();
+  const user = JSON.parse(req.headers.authorization);
+
+  if (user.role === 1) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const dateArray = [];
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      const day = i.toString().padStart(2, '0');
+      dateArray.push(`${year}-${month}-${day}`);
+    }
+
+    const dateUnion = dateArray.map(date => `SELECT '${date}' AS punch_date`).join(' UNION ALL ');
+
+    const query = `
+      WITH calendar_dates AS (
+        ${dateUnion}
+      )
+      SELECT 
+        d.punch_date,
+        e.emp_id,
+        TRIM(e.emp_code) AS emp_code,
+        TRIM(e.user_name) AS user_name,
+        dsg.designation_name,
+        CASE
+        WHEN  a.leave_status = 2 THEN 'L'
+  WHEN d.punch_date > CURRENT_DATE() THEN ''
+            WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+          WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A'
+          WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+          WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
+          ELSE 'A'
+        END AS attendance_status
+      FROM calendar_dates d
+      CROSS JOIN romsondb.cor_emp_m e
+      LEFT JOIN romsondb.cor_attendance_m a 
+        ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+      LEFT JOIN romsondb.cor_leave_m l 
+        ON e.emp_id = l.emp_id 
+        AND l.start_date <= d.punch_date 
+        AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+      LEFT JOIN crm_dev_db.cor_designation_m dsg 
+        ON e.designation = dsg.designation_id
+      WHERE e.status = 'A'
+      ORDER BY e.emp_id, d.punch_date
+    `;
+
+    sql.query(query, (err, res) => {
+      if (err) {
+        console.error("Query Error: ", err);
+        result({ error: true, message: "Failed to fetch monthly attendance data" });
+        return;
+      }
+
+      const finalOutput = [];
+      const employeeMap = {};
+
+      for (const row of res) {
+        const empId = row.emp_id;
+        const day = new Date(row.punch_date).getDate();
+        const status = row.attendance_status;
+
+        if (!employeeMap[empId]) {
+          employeeMap[empId] = {
+            emp_id: empId,
+            emp_code: row.emp_code,
+            user_name: row.user_name,
+            designation: row.designation_name,
+            present_days: 0,
+            half_days: 0,
+            leave: 0,
+            holiday: 0,
+            absent: 0,
+            month_days: daysInMonth
+          };
+        }
+
+        employeeMap[empId][day] = status;
+
+        // Accurate count only on valid working status
+        if (status === 'P') {
+          employeeMap[empId].present_days += 1;
+        } else if (status === 'ABSHD') {
+          employeeMap[empId].half_days += 1;
+        } else if (status === 'L') {
+          employeeMap[empId].leave += 1;
+        } else if (status === 'A') {
+          employeeMap[empId].absent += 1;
+        }
+        // WEO is not counted in summary
+      }
+
+      // Fill missing days
+      for (const empId in employeeMap) {
+        for (let i = 1; i <= daysInMonth; i++) {
+          if (!employeeMap[empId][i]) {
+            employeeMap[empId][i] = '';
+          }
+        }
+        finalOutput.push(employeeMap[empId]);
+      }
+
+      result({ error: false, data: finalOutput });
     });
   } else {
     result({ error: true, message: "Unauthorized access" });
@@ -1448,70 +1599,6 @@ GROUP BY
 };
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // attendance.attendance_punch_in =  (req, result) => {
 //   sql.query(`SELECT COUNT(*) as count FROM romsondb.cor_attendance_m WHERE emp_id = '${req.body.empID}' AND punch_date = curdate()`,
 //  (err, res) => {
@@ -1568,15 +1655,26 @@ attendance.HolidayList = (req, result) => {
   });
 };
 
-
+////////////////////////for crm_report//////////////////////////////
 attendance.leaveReportSummary = (req, result) => {
-  const { fromDate, toDate } = req.body;
+  const { fromDate, toDate, statusFilter } = req.body;
+
+  let statusCondition = "";
+  if (statusFilter === "Pending") {
+    statusCondition = "AND lm.status = 1";
+  } else if (statusFilter === "Accepted") {
+    statusCondition = "AND lm.status = 2";
+  } else if (statusFilter === "Rejected") {
+    statusCondition = "AND lm.status = 3";
+  }
 
   const query = `
     SELECT 
       lm.emp_id,
       em.user_name,
-      lm.leave_type,
+      em.head_quater_name,
+      em.emp_code,
+      GROUP_CONCAT(DISTINCT att.leave_type) AS leave_type,  -- ✅ from attendance table
       DATE_FORMAT(lm.start_date, '%Y-%m-%d') AS start_date,
       DATE_FORMAT(lm.end_date, '%Y-%m-%d') AS end_date,
       CONCAT(DATE_FORMAT(lm.start_date, '%d-%b-%Y'), ' - ', DATE_FORMAT(lm.end_date, '%d-%b-%Y')) AS leave_from_to,
@@ -1585,53 +1683,28 @@ attendance.leaveReportSummary = (req, result) => {
       CONCAT(lm.reporting_to, ' - ', r.user_name) AS reporting_to_name,
       CONCAT(lm.approved_by, ' - ', ab.user_name) AS approved_by,
       DATE_FORMAT(lm.approved_date, '%Y-%m-%d') AS approved_date,
-      lm.status,
       CASE 
-  WHEN lm.status = 3 THEN 'Rejected'
-  WHEN lm.status = 1 AND lm.approved_by IS NOT NULL THEN 'Accepted'
-  WHEN lm.status = 1 AND lm.approved_by IS NULL THEN 'Pending'
-  ELSE 'Unknown'
-END AS status,
+        WHEN lm.status = 3 THEN 'Rejected'
+        WHEN lm.status = 2 THEN 'Accepted'
+        WHEN lm.status = 1 THEN 'Pending'
+        ELSE 'Unknown'
+      END AS status
+    FROM romsondb.cor_leave_m lm
+    JOIN romsondb.cor_emp_m em ON em.emp_id = lm.emp_id
+    LEFT JOIN romsondb.cor_emp_m r ON r.emp_id = lm.reporting_to
+    LEFT JOIN romsondb.cor_emp_m ab ON ab.emp_id = lm.approved_by
 
-      (
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
-      ) AS total_allocated_leave,
-      (
-        SELECT 
-          COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
-          COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
-          COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
-        FROM crm_dev_db.cor_leave_m lm2
-        WHERE lm2.emp_id = lm.emp_id
-          AND YEAR(lm2.enter_date) = YEAR(CURDATE())
-      ) AS total_availed_leave,
-      (
-        (
-          COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
-          COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
-          COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
-        ) -
-        (
-          SELECT 
-            COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
-            COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
-            COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
-          FROM crm_dev_db.cor_leave_m lm2
-          WHERE lm2.emp_id = lm.emp_id
-            AND YEAR(lm2.enter_date) = YEAR(CURDATE())
-        )
-      ) AS total_balance_leave
-    FROM crm_dev_db.cor_leave_m lm
-    JOIN crm_dev_db.cor_emp_m em ON em.emp_id = lm.emp_id
-    LEFT JOIN crm_dev_db.cor_leave_summary sm ON sm.emp_id = lm.emp_id
-    LEFT JOIN crm_dev_db.cor_emp_m r ON r.emp_id = lm.reporting_to
-    LEFT JOIN crm_dev_db.cor_emp_m ab ON ab.emp_id = lm.approved_by
+    LEFT JOIN romsondb.cor_attendance_m att 
+      ON att.emp_id = lm.emp_id
+      AND att.punch_date BETWEEN lm.start_date AND lm.end_date
+      AND att.status = 2 AND att.leave_status = 2
+
     WHERE lm.start_date <= '${toDate}'
       AND lm.end_date >= '${fromDate}'
+      ${statusCondition}
+
     GROUP BY lm.id
-    ORDER BY FIELD(lm.status, 'Pending', 'Accepted', 'Rejected'), lm.start_date ASC;
+    ORDER BY lm.start_date ASC;
   `;
 
   console.log("Executing Query:", query);
@@ -1641,17 +1714,78 @@ END AS status,
       console.error("Query Error:", err);
       result({ error: true, data: "Something Went Wrong" });
     } else {
-      console.log("Query Result:", res);
       result({ error: false, data: res });
     }
   });
 };
 
 
+////////////////crm- report day-wise-attendance data///////////////////////
+
+attendance.DayWiseAttendanceReport = (req, result) => {
+  const { fromDate, toDate} = req.query;
+
+ 
+  const query = `
+ WITH RECURSIVE date_range AS (
+    SELECT DATE('${fromDate}') AS punch_date
+    UNION ALL
+    SELECT DATE_ADD(punch_date, INTERVAL 1 DAY)
+    FROM date_range
+    WHERE punch_date < '${toDate}'
+)
+
+SELECT 
+    e.emp_id,
+    TRIM(e.emp_code) AS emp_code,
+    e.user_name,
+    
+    DATE_FORMAT(d.punch_date, '%d-%m-%Y') AS punch_date,
+    
+   DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
+      DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
 
 
+    CASE 
+        WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 
+            CONCAT(
+                FLOOR(TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out)/3600), ' hours ',
+                FLOOR((TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out) % 3600)/60), ' minutes'
+            )
+        ELSE '0 hours 0 minutes'
+    END AS total_hours,
 
+    CASE 
+        WHEN a.leave_status = 2 THEN 'L'
+        WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 'P'
+        ELSE 'A'
+    END AS attendance_status
 
+FROM 
+    romsondb.cor_emp_m e
+CROSS JOIN 
+    date_range d
+LEFT JOIN 
+    romsondb.cor_attendance_m a 
+    ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+WHERE 
+    e.status = 'A'
+ORDER BY 
+    e.emp_code, d.punch_date;
+
+  `;
+
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
 
 
 

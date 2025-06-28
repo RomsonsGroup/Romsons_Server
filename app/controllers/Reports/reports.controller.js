@@ -178,10 +178,21 @@ exports.ApprovedRegularizationList = (req, res) => {
   console.log('listAuth -------', data);
   res.send(data);
 });
-
-
 };
 
+
+exports.getPendingRegularizationCount = (req, res) => {
+  reportsModel.getPendingRegularizationCount(req,(data) => {
+  res.send(data);
+});
+};
+
+
+exports.getPendingLeaveCount = (req, res) => {
+  reportsModel.getPendingLeaveCount(req,(data) => {
+  res.send(data);
+});
+};
 
 
 exports.OrderHistory_MIS = (req, res) => {
