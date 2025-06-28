@@ -1636,7 +1636,7 @@ attendance.HolidayList = (req, result) => {
       h.holiday_type,
       h.state_id
     FROM 
-      crm_dev_db.holiday_m h
+      crm_dev_db.cor_holiday_m h
     INNER JOIN 
       crm_dev_db.cor_emp_m e ON FIND_IN_SET(e.state_id, h.state_id) > 0
     WHERE 

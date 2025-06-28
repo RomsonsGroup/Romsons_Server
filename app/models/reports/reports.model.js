@@ -823,7 +823,7 @@ LEFT JOIN
     AND l.start_date <= d.punch_date 
     AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
 LEFT JOIN
-    crm_dev_db.holiday_m h ON FIND_IN_SET(e.state_id, h.state_id) > 0
+    crm_dev_db.cor_holiday_m h ON FIND_IN_SET(e.state_id, h.state_id) > 0
     AND h.date = d.punch_date
 WHERE 
     e.status = 'A'
