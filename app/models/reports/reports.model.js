@@ -831,6 +831,7 @@ WHERE
 ORDER BY 
     d.punch_date;
 `,
+
     (err, res) => {
       console.log("Query Result: ", res);
       if (err) {
