@@ -1,8 +1,0 @@
-module.exports = {
-  user: "devcrmuser",
-  host: "15.206.230.45",
-  // host: "10.10.130.10",
-  password: "SrOMt7OCoI)<DIoK",
-//  password: "gl2XdOQHqcb02cypRNSr",
-  database: "romsondb",
-};
