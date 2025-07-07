@@ -103,12 +103,22 @@ attendance.ValidationAttendance = (req, result) => {
 
 ////////////////////add new logic=> user can not punch attendance, same day leave applied already//////////////////
 
+function versionToNumber(version) {
+  const parts = version.split('.').map(Number);
+  return parts[0] * 10000 + (parts[1] || 0) * 100 + (parts[2] || 0);
+}
 
 attendance.attendance_punch_in = (req, result) => {
   const empId = req.body.empid;
+  const clientVersion = req.body.app_version;
+  const minVersion = '7.0.0';
 
+  if (versionToNumber(clientVersion) < versionToNumber(minVersion) && versionToNumber(clientVersion)!= 0) {
+    result({ msg: true, message: "You are using older version, please update the app from Play Store." });
+    return;
+  }
   // Step 1: Check employee status
-  const statusCheckQuery = `SELECT status FROM crm_dev_db.cor_emp_m WHERE emp_id = ?`;
+  const statusCheckQuery = `SELECT status FROM romsondb.cor_emp_m WHERE emp_id = ?`;
 
   sql.query(statusCheckQuery, [empId], (err, statusRes) => {
     if (err) {
@@ -130,7 +140,7 @@ attendance.attendance_punch_in = (req, result) => {
 
     // ✅ Step 2: Check if user has already applied for leave today
     const leaveCheckQuery = `
-      SELECT 1 FROM crm_dev_db.cor_leave_m 
+      SELECT 1 FROM romsondb.cor_leave_m 
       WHERE emp_id = ? 
         AND CURDATE() BETWEEN start_date AND end_date
         AND status IN (1, 2)`;
@@ -148,16 +158,16 @@ attendance.attendance_punch_in = (req, result) => {
 
       // ✅ Step 3: Proceed to punch-in if no leave found
       const attendanceQuery = `
-        INSERT INTO crm_dev_db.cor_attendance_m
+        INSERT INTO romsondb.cor_attendance_m
           (attendance_id, emp_id, shift, punch_date, punch_in, in_lat, in_lng, enter_by, enter_date, in_remark, work_place, in_address, app_version)
         SELECT
-          crm_dev_db.all_auto_no(55),
+          romsondb.all_auto_no(55),
           ?, 'D', CURDATE(), NOW(), ?, ?, ?, NOW(), ?, ?, ?, ?
         FROM
           DUAL
         WHERE
           NOT EXISTS (
-            SELECT 1 FROM crm_dev_db.cor_attendance_m
+            SELECT 1 FROM romsondb.cor_attendance_m
             WHERE emp_id = ? AND punch_date = CURDATE()
           );
       `;
@@ -1198,6 +1208,9 @@ attendance.attandance_count = (req, result) => {
               ELSE 
                 CASE 
                   WHEN a.leave_status = 2 THEN 'L'
+                      WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
+                        WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+  WHEN DAYOFWEEK(d.punch_date) = 1 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
                   WHEN a.leave_status = 1 THEN 'A'
                   WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' 
                   WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' 
@@ -1228,6 +1241,11 @@ attendance.attandance_count = (req, result) => {
           WHEN a.leave_status = 2 THEN DATE_FORMAT(l.approved_date, '%Y-%m-%d')
           ELSE NULL
         END AS approved_date,
+        CASE 
+  WHEN a.leave_status = 2 THEN d.punch_date
+  ELSE NULL
+END AS transaction_date,
+
 
         IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL, 
           TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out), 
@@ -1244,6 +1262,9 @@ attendance.attandance_count = (req, result) => {
         romsondb.cor_leave_m l ON e.emp_id = l.emp_id 
           AND l.start_date <= d.punch_date 
           AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+          LEFT JOIN romsondb.cor_holiday_m h 
+        ON FIND_IN_SET(e.state_id, h.state_id) > 0
+        AND h.date = d.punch_date
       WHERE 
         e.status = 'A'
     `;
@@ -1269,14 +1290,14 @@ attendance.attandance_count = (req, result) => {
             .tz('Asia/Kolkata')
             .format('h:mm A');
         }
-      
+
         if (record.punch_out_time !== '00:00:00') {
           record.punch_out_time = moment
             .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
             .tz('Asia/Kolkata')
             .format('h:mm A');
         }
-      
+
         // Compute and format total_hours in HH:MM
         if (
           record.punch_in_time !== '00:00:00' &&
@@ -1284,18 +1305,18 @@ attendance.attandance_count = (req, result) => {
         ) {
           const punchInMoment = moment(record.punch_in_time, 'h:mm A');
           const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
-      
+
           const duration = moment.duration(punchOutMoment.diff(punchInMoment));
           const totalHours = Math.floor(duration.asHours());
           const totalMinutes = duration.minutes();
-      
+
           record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
             .toString()
             .padStart(2, '0')}`;
         } else {
           record.total_hours = '00:00';
         }
-      
+
         // Ensure consistent format for attendance_id
         if (!record.attendance_id) {
           const fixedPrefix = '100';
@@ -1306,11 +1327,11 @@ attendance.attandance_count = (req, result) => {
           const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
           record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
         }
-      
+
         return record;
       });
-      
-      
+
+
 
       result({ error: false, data: convertedResults });
     });
@@ -1351,6 +1372,8 @@ attendance.attendance_monthly = (req, result) => {
         CASE
         WHEN  a.leave_status = 2 THEN 'L'
   WHEN d.punch_date > CURRENT_DATE() THEN ''
+        WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
+              WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
             WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
           WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A'
           WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
@@ -1365,6 +1388,9 @@ attendance.attendance_monthly = (req, result) => {
         ON e.emp_id = l.emp_id 
         AND l.start_date <= d.punch_date 
         AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+        LEFT JOIN romsondb.cor_holiday_m h 
+    ON FIND_IN_SET(e.state_id, h.state_id) > 0
+    AND h.date = d.punch_date
       LEFT JOIN crm_dev_db.cor_designation_m dsg 
         ON e.designation = dsg.designation_id
       WHERE e.status = 'A'
@@ -1410,10 +1436,11 @@ attendance.attendance_monthly = (req, result) => {
           employeeMap[empId].half_days += 1;
         } else if (status === 'L') {
           employeeMap[empId].leave += 1;
+        } else if (status === 'PHY') {
+          employeeMap[empId].holiday += 1;
         } else if (status === 'A') {
           employeeMap[empId].absent += 1;
         }
-        // WEO is not counted in summary
       }
 
       // Fill missing days
@@ -1656,14 +1683,18 @@ attendance.HolidayList = (req, result) => {
 };
 
 ////////////////////////for crm_report//////////////////////////////
+///////////////////leaveReportSummary with new table cor_leave_summary//////////////////////
+
+
 attendance.leaveReportSummary = (req, result) => {
   const { fromDate, toDate, statusFilter } = req.body;
 
+  // Build status condition dynamically
   let statusCondition = "";
   if (statusFilter === "Pending") {
-    statusCondition = "AND lm.status = 1";
+    statusCondition = "AND lm.status = 1 AND lm.approved_by IS NULL";
   } else if (statusFilter === "Accepted") {
-    statusCondition = "AND lm.status = 2";
+    statusCondition = "AND lm.status = 1 AND lm.approved_by IS NOT NULL";
   } else if (statusFilter === "Rejected") {
     statusCondition = "AND lm.status = 3";
   }
@@ -1672,9 +1703,8 @@ attendance.leaveReportSummary = (req, result) => {
     SELECT 
       lm.emp_id,
       em.user_name,
-      em.head_quater_name,
-      em.emp_code,
-      GROUP_CONCAT(DISTINCT att.leave_type) AS leave_type,  -- ✅ from attendance table
+       em.head_quater_name,
+      lm.leave_type,
       DATE_FORMAT(lm.start_date, '%Y-%m-%d') AS start_date,
       DATE_FORMAT(lm.end_date, '%Y-%m-%d') AS end_date,
       CONCAT(DATE_FORMAT(lm.start_date, '%d-%b-%Y'), ' - ', DATE_FORMAT(lm.end_date, '%d-%b-%Y')) AS leave_from_to,
@@ -1685,19 +1715,49 @@ attendance.leaveReportSummary = (req, result) => {
       DATE_FORMAT(lm.approved_date, '%Y-%m-%d') AS approved_date,
       CASE 
         WHEN lm.status = 3 THEN 'Rejected'
-        WHEN lm.status = 2 THEN 'Accepted'
-        WHEN lm.status = 1 THEN 'Pending'
+        WHEN lm.status = 2 AND lm.approved_by IS NOT NULL THEN 'Accepted'
+        WHEN lm.status = 1 AND lm.approved_by IS NULL THEN 'Pending'
         ELSE 'Unknown'
-      END AS status
+      END AS status,
+
+      (
+        COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
+        COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
+        COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
+      ) AS total_allocated_leave,
+
+      (
+        SELECT 
+          COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
+          COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
+          COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+        FROM romsondb.cor_leave_m lm2
+        WHERE lm2.emp_id = lm.emp_id
+          AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+      ) AS total_availed_leave,
+
+      (
+        (
+          COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
+          COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
+          COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
+        ) -
+        (
+          SELECT 
+            COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
+            COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
+            COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+          FROM romsondb.cor_leave_m lm2
+          WHERE lm2.emp_id = lm.emp_id
+            AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+        )
+      ) AS total_balance_leave
+
     FROM romsondb.cor_leave_m lm
     JOIN romsondb.cor_emp_m em ON em.emp_id = lm.emp_id
+    LEFT JOIN romsondb.cor_leave_summary sm ON sm.emp_id = lm.emp_id
     LEFT JOIN romsondb.cor_emp_m r ON r.emp_id = lm.reporting_to
     LEFT JOIN romsondb.cor_emp_m ab ON ab.emp_id = lm.approved_by
-
-    LEFT JOIN romsondb.cor_attendance_m att 
-      ON att.emp_id = lm.emp_id
-      AND att.punch_date BETWEEN lm.start_date AND lm.end_date
-      AND att.status = 2 AND att.leave_status = 2
 
     WHERE lm.start_date <= '${toDate}'
       AND lm.end_date >= '${fromDate}'
@@ -1723,9 +1783,9 @@ attendance.leaveReportSummary = (req, result) => {
 ////////////////crm- report day-wise-attendance data///////////////////////
 
 attendance.DayWiseAttendanceReport = (req, result) => {
-  const { fromDate, toDate} = req.query;
+  const { fromDate, toDate } = req.query;
 
- 
+
   const query = `
  WITH RECURSIVE date_range AS (
     SELECT DATE('${fromDate}') AS punch_date
@@ -1739,9 +1799,8 @@ SELECT
     e.emp_id,
     TRIM(e.emp_code) AS emp_code,
     e.user_name,
-    
     DATE_FORMAT(d.punch_date, '%d-%m-%Y') AS punch_date,
-    
+    a.app_version,
    DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
       DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
 
