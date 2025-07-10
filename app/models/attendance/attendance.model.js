@@ -34,7 +34,7 @@ attendance.ValidationAttendance = (req, result) => {
 //   const empId = req.body.empid;
 
 //   // Step 1: Check employee status
-//   const statusCheckQuery = `SELECT status FROM crm_dev_db.cor_emp_m WHERE emp_id = ?`;
+//   const statusCheckQuery = `SELECT status FROM romsondb.cor_emp_m WHERE emp_id = ?`;
 
 //   sql.query(statusCheckQuery, [empId], (err, statusRes) => {
 //     if (err) {
@@ -56,16 +56,16 @@ attendance.ValidationAttendance = (req, result) => {
 
 //     // Step 2: Proceed to punch-in if active
 //     const attendanceQuery = `
-//       INSERT INTO crm_dev_db.cor_attendance_m
+//       INSERT INTO romsondb.cor_attendance_m
 //         (attendance_id, emp_id, shift, punch_date, punch_in, in_lat, in_lng, enter_by, enter_date, in_remark, work_place, in_address, app_version)
 //       SELECT
-//         crm_dev_db.all_auto_no(55),
+//         romsondb.all_auto_no(55),
 //         ?, 'D', CURDATE(), NOW(), ?, ?, ?, NOW(), ?, ?, ?, ?
 //       FROM
 //         DUAL
 //       WHERE
 //         NOT EXISTS (
-//           SELECT 1 FROM crm_dev_db.cor_attendance_m
+//           SELECT 1 FROM romsondb.cor_attendance_m
 //           WHERE emp_id = ? AND punch_date = CURDATE()
 //         );
 //     `;
@@ -214,7 +214,7 @@ attendance.attendance_punchout = (req, result) => {
 
   // Check if the punch-out already exists for the user today
   sql.query(`
-      SELECT * FROM crm_dev_db.cor_attendance_m 
+      SELECT * FROM romsondb.cor_attendance_m 
       WHERE emp_id = '${req.body.empid}' 
       AND punch_date = curdate() 
       AND punch_out IS NOT NULL`,
@@ -227,7 +227,7 @@ attendance.attendance_punchout = (req, result) => {
         } else {
 
           sql.query(`
-            UPDATE crm_dev_db.cor_attendance_m 
+            UPDATE romsondb.cor_attendance_m 
             SET 
                 punch_out = sysdate(),
                 out_lat = '${req.body.out_lat}', 
@@ -265,7 +265,7 @@ attendance.attendance_punchout = (req, result) => {
 //   }
 
 //   sql.query(`
-//       UPDATE crm_dev_db.cor_attendance_m 
+//       UPDATE romsondb.cor_attendance_m 
 //       SET 
 //           punch_out = sysdate(),
 //           out_lat = '${req.body.out_lat}', 
@@ -327,9 +327,9 @@ attendance.attendance_punchout = (req, result) => {
 //         0
 //       ) AS el_balance
 //     FROM 
-//       crm_dev_db.cor_leave_summary sm
+//       romsondb.cor_leave_summary sm
 //     LEFT JOIN 
-//       crm_dev_db.cor_leave_m lm 
+//       romsondb.cor_leave_m lm 
 //     ON 
 //       sm.emp_id = lm.emp_id 
 //       AND sm.leave_type = lm.leave_type
@@ -367,7 +367,7 @@ attendance.attendance_punchout = (req, result) => {
 
 //     // Check for overlapping leave applications
 //     const overlapCheckQuery = `
-//       SELECT * FROM crm_dev_db.cor_leave_m 
+//       SELECT * FROM romsondb.cor_leave_m 
 //       WHERE emp_id = '${empID}' 
 //       AND (
 //         (start_date <= '${fromDate}' AND end_date >= '${fromDate}') OR
@@ -389,7 +389,7 @@ attendance.attendance_punchout = (req, result) => {
 
 //       // Insert leave application with the determined leave type
 //       const insertLeaveQuery = `
-//         INSERT INTO crm_dev_db.cor_leave_m 
+//         INSERT INTO romsondb.cor_leave_m 
 //           (emp_id, reporting_to, leave_type, start_date, end_date, leave_days, leave_reason, enter_by, enter_date)
 //         VALUES 
 //           ('${empID}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${toDate}', '${numofdays}', '${leavereason}', '${enterBy}', sysdate())`;
@@ -455,9 +455,9 @@ attendance.LeaveApp = (req, result) => {
         0
       ) AS sl_balance
     FROM 
-      crm_dev_db.cor_leave_summary sm
+      romsondb.cor_leave_summary sm
     LEFT JOIN 
-      crm_dev_db.cor_leave_m lm 
+      romsondb.cor_leave_m lm 
     ON 
       sm.emp_id = lm.emp_id 
       AND sm.leave_type = lm.leave_type
@@ -493,7 +493,7 @@ attendance.LeaveApp = (req, result) => {
 
     // Check for overlapping leave applications
     const overlapCheckQuery = `
-      SELECT * FROM crm_dev_db.cor_leave_m 
+      SELECT * FROM romsondb.cor_leave_m 
       WHERE emp_id = '${empID}' 
       AND (
         (start_date <= '${fromDate}' AND end_date >= '${fromDate}') OR
@@ -515,7 +515,7 @@ attendance.LeaveApp = (req, result) => {
 
       // Insert leave application with the determined leave type
       const insertLeaveQuery = `
-        INSERT INTO crm_dev_db.cor_leave_m 
+        INSERT INTO romsondb.cor_leave_m 
           (emp_id, reporting_to, leave_type, start_date, end_date, leave_days, leave_reason, enter_by, enter_date)
         VALUES 
           ('${empID}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${toDate}', '${numofdays}', '${leavereason}', '${enterBy}', sysdate())`;
@@ -546,7 +546,7 @@ attendance.LeaveApp = (req, result) => {
 //   const { empID, rpPerson, fromDate, toDate, numofdays, leavereason, enterBy } = req.body;
 
 //   // Get leave counter from cor_shift_m table
-//   const leaveLimitQuery = `SELECT leave_counter FROM crm_dev_db.cor_shift_m WHERE leave_counter IS NOT NULL LIMIT 1`;
+//   const leaveLimitQuery = `SELECT leave_counter FROM romsondb.cor_shift_m WHERE leave_counter IS NOT NULL LIMIT 1`;
 
 //   sql.query(leaveLimitQuery, (err, limitRes) => {
 //     if (err) {
@@ -593,9 +593,9 @@ attendance.LeaveApp = (req, result) => {
 //           0
 //         ) AS sl_balance
 //       FROM 
-//         crm_dev_db.cor_leave_summary sm
+//         romsondb.cor_leave_summary sm
 //       LEFT JOIN 
-//         crm_dev_db.cor_leave_m lm 
+//         romsondb.cor_leave_m lm 
 //       ON 
 //         sm.emp_id = lm.emp_id 
 //       AND sm.leave_type = lm.leave_type
@@ -632,7 +632,7 @@ attendance.LeaveApp = (req, result) => {
 //       // Check for overlapping leave applications
 //       const overlapCheckQuery = `
 //         SELECT * 
-// FROM crm_dev_db.cor_leave_m 
+// FROM romsondb.cor_leave_m 
 // WHERE 
 //   (
 //     (start_date <= '${fromDate}' AND end_date >= '${fromDate}') OR
@@ -658,7 +658,7 @@ attendance.LeaveApp = (req, result) => {
 //         const leaveCounter = numofdays <= 15 ? limitRes[0].leave_counter : 'default_leave_counter';
 
 //         const insertLeaveQuery = `
-//           INSERT INTO crm_dev_db.cor_leave_m 
+//           INSERT INTO romsondb.cor_leave_m 
 //             (leave_counter, reporting_to, leave_type, start_date, end_date, leave_days, leave_reason, enter_by, enter_date)
 //           VALUES 
 //             ('${leaveCounter}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${toDate}', '${numofdays}', '${leavereason}', '${enterBy}', sysdate())`;
@@ -971,11 +971,11 @@ attendance.LeaveCount = (req, result) => {
 //       FROM 
 //         (SELECT ? AS punch_date) d
 //       LEFT JOIN 
-//         crm_dev_db.cor_emp_m e ON 1 = 1
+//         romsondb.cor_emp_m e ON 1 = 1
 //       LEFT JOIN 
-//         crm_dev_db.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+//         romsondb.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
 //       LEFT JOIN 
-//         crm_dev_db.cor_leave_m l ON e.emp_id = l.emp_id 
+//         romsondb.cor_leave_m l ON e.emp_id = l.emp_id 
 //         AND l.start_date <= d.punch_date 
 //         AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
 //       WHERE 
@@ -1085,15 +1085,15 @@ attendance.LeaveCount = (req, result) => {
 //      FROM 
 //         (SELECT ? AS punch_date) d
 //      LEFT JOIN 
-//         crm_dev_db.cor_emp_m e ON 1 = 1
+//         romsondb.cor_emp_m e ON 1 = 1
 //      LEFT JOIN 
-//         crm_dev_db.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+//         romsondb.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
 //      LEFT JOIN 
-//         crm_dev_db.cor_leave_m l ON e.emp_id = l.emp_id 
+//         romsondb.cor_leave_m l ON e.emp_id = l.emp_id 
 //         AND l.start_date <= d.punch_date 
 //         AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
 //      LEFT JOIN
-//         crm_dev_db.holiday_m h ON FIND_IN_SET(e.state_id, h.state_id) > 0
+//         romsondb.holiday_m h ON FIND_IN_SET(e.state_id, h.state_id) > 0
 //   AND h.date = d.punch_date
 //      WHERE 
 //         e.status = 'A'
@@ -1157,7 +1157,7 @@ attendance.LeaveCount = (req, result) => {
 //     SELECT 
 //     DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in,
 //     DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out
-// FROM crm_dev_db.cor_attendance_m 
+// FROM romsondb.cor_attendance_m 
 // WHERE emp_id = '${req.body.empidd}' 
 // AND (
 //     DATE(CONVERT_TZ(punch_in, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
@@ -1182,91 +1182,95 @@ attendance.LeaveCount = (req, result) => {
 ///////////////////////////attendance count///////////////////////////////
 
 attendance.attandance_count = (req, result) => {
-  const punchDate = req.query.punch_date; // Date parameter (YYYY-MM-DD)
-  const empId = req.query.emp_id; // Employee ID parameter (optional)
-
+  const punchDate = req.query.punch_date;
+  const empId = req.query.emp_id;
   const user = JSON.parse(req.headers.authorization);
 
   if (user.role === 1) {
     let query = `
       SELECT 
         IFNULL(a.attendance_id, NULL) AS attendance_id,
-        d.punch_date, 
+        d.punch_date,
         COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
         COALESCE(TIME(a.punch_out), '00:00:00') AS punch_out_time,
         e.emp_id,
-        TRIM(e.emp_code) AS emp_code, 
-        TRIM(e.user_name) AS user_name, 
-
+        TRIM(e.emp_code) AS emp_code,
+        TRIM(e.user_name) AS user_name,
         'RGPL' AS company_name,
 
         CASE 
           WHEN DAYOFWEEK(d.punch_date) = 1 THEN 
             CASE
               WHEN a.leave_status = 2 THEN 'L'
-              WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' 
+              WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
               ELSE 
                 CASE 
-                  WHEN a.leave_status = 2 THEN 'L'
-                      WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
-                        WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
-  WHEN DAYOFWEEK(d.punch_date) = 1 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+                  WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
+                  WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
                   WHEN a.leave_status = 1 THEN 'A'
-                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' 
-                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' 
+                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
                   ELSE 'A'
-                END 
+                END
             END
           ELSE 
             CASE 
               WHEN a.leave_status = 2 THEN 'L'
               WHEN a.leave_status = 1 THEN 'A'
-              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P' 
-              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD' 
+              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
               ELSE 'A'
             END
         END AS attendance_status,
 
-        CASE 
-          WHEN a.leave_status = 2 THEN COALESCE(l.leave_type, '0')  
-          ELSE '0'  
-        END AS leave_type,
+        -- ✅ Updated leave_type logic
+        COALESCE((
+          SELECT lsub.leave_type 
+          FROM romsondb.cor_leave_m lsub
+          WHERE lsub.emp_id = e.emp_id
+            AND DATE(lsub.enter_date) = d.punch_date
+            AND lsub.status = 2
+          ORDER BY lsub.start_date ASC
+          LIMIT 1
+        ), '0') AS leave_type,
 
+        -- Applied date if available
         CASE 
           WHEN a.leave_status = 2 THEN DATE_FORMAT(l.enter_date, '%Y-%m-%d')
           ELSE NULL
         END AS applied_date,
-
+        
         CASE 
-          WHEN a.leave_status = 2 THEN DATE_FORMAT(l.approved_date, '%Y-%m-%d')
+          WHEN a.leave_status = 2 THEN d.punch_date
+          WHEN EXISTS (
+            SELECT 1 FROM romsondb.cor_leave_m lsub
+            WHERE lsub.emp_id = e.emp_id
+              AND DATE(lsub.enter_date) = d.punch_date
+              AND lsub.status = 2
+          ) THEN (
+            SELECT MIN(lsub.start_date) FROM romsondb.cor_leave_m lsub
+            WHERE lsub.emp_id = e.emp_id
+              AND DATE(lsub.enter_date) = d.punch_date
+              AND lsub.status = 2
+          )
           ELSE NULL
-        END AS approved_date,
-        CASE 
-  WHEN a.leave_status = 2 THEN d.punch_date
-  ELSE NULL
-END AS transaction_date,
+        END AS leave_transaction_date,
 
-
-        IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL, 
-          TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out), 
+        IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL,
+          TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out),
           0
         ) AS total_hours
 
-      FROM 
-        (SELECT ? AS punch_date) d
-      LEFT JOIN 
-        romsondb.cor_emp_m e ON 1 = 1
-      LEFT JOIN 
-        romsondb.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
-      LEFT JOIN 
-        romsondb.cor_leave_m l ON e.emp_id = l.emp_id 
-          AND l.start_date <= d.punch_date 
-          AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
-          LEFT JOIN romsondb.cor_holiday_m h 
+      FROM (SELECT ? AS punch_date) d
+      LEFT JOIN romsondb.cor_emp_m e ON 1 = 1
+      LEFT JOIN romsondb.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+      LEFT JOIN romsondb.cor_leave_m l ON e.emp_id = l.emp_id 
+        AND l.start_date <= d.punch_date 
+        AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+      LEFT JOIN romsondb.cor_holiday_m h 
         ON FIND_IN_SET(e.state_id, h.state_id) > 0
         AND h.date = d.punch_date
-      WHERE 
-        e.status = 'A'
+      WHERE e.status = 'A'
     `;
 
     if (empId) {
@@ -1283,7 +1287,7 @@ END AS transaction_date,
       }
 
       const convertedResults = res.map(record => {
-        // Convert punch-in and punch-out times
+        // Format punch-in and punch-out
         if (record.punch_in_time !== '00:00:00') {
           record.punch_in_time = moment
             .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
@@ -1298,7 +1302,7 @@ END AS transaction_date,
             .format('h:mm A');
         }
 
-        // Compute and format total_hours in HH:MM
+        // Format total_hours as HH:MM
         if (
           record.punch_in_time !== '00:00:00' &&
           record.punch_out_time !== '00:00:00'
@@ -1317,7 +1321,7 @@ END AS transaction_date,
           record.total_hours = '00:00';
         }
 
-        // Ensure consistent format for attendance_id
+        // Generate fake attendance_id if null
         if (!record.attendance_id) {
           const fixedPrefix = '100';
           const uniqueKey = `${record.emp_id}-${record.punch_date}`;
@@ -1331,14 +1335,14 @@ END AS transaction_date,
         return record;
       });
 
-
-
       result({ error: false, data: convertedResults });
     });
   } else {
     result({ error: true, message: "Unauthorized access" });
   }
 };
+
+
 
 
 
@@ -1391,7 +1395,7 @@ attendance.attendance_monthly = (req, result) => {
         LEFT JOIN romsondb.cor_holiday_m h 
     ON FIND_IN_SET(e.state_id, h.state_id) > 0
     AND h.date = d.punch_date
-      LEFT JOIN crm_dev_db.cor_designation_m dsg 
+      LEFT JOIN romsondb.cor_designation_m dsg 
         ON e.designation = dsg.designation_id
       WHERE e.status = 'A'
       ORDER BY e.emp_id, d.punch_date
@@ -1466,7 +1470,7 @@ attendance.punchInOutTime = (req, result) => {
       DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in,
       DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out,
       TIMESTAMPDIFF(HOUR, punch_in, punch_out) AS total_hours
-    FROM crm_dev_db.cor_attendance_m 
+    FROM romsondb.cor_attendance_m 
     WHERE emp_id = '${req.body.empidd}' 
     AND (
       DATE(CONVERT_TZ(punch_in, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
@@ -1496,7 +1500,7 @@ attendance.shiftDetails = (req, result) => {
     DATE_FORMAT(late_start_coming, '%h:%i %p') AS late_start_coming,
     DATE_FORMAT(late_end_coming, '%h:%i %p') AS late_end_coming
 FROM 
-    crm_dev_db.cor_shift_m;
+    romsondb.cor_shift_m;
   `, (err, res) => {
 
     console.log("Result Data: ", res);
@@ -1528,7 +1532,7 @@ attendance.attandance_summary = (req, result) => {
         CONVERT_TZ(punch_out, '+00:00', '+05:30')
       ) AS total_hours -- Total hours worked
     FROM 
-      crm_dev_db.cor_attendance_m
+      romsondb.cor_attendance_m
     WHERE 
       emp_id = ?
       AND DATE(CONVERT_TZ(punch_in, '+00:00', '+05:30')) = CURDATE()
@@ -1596,9 +1600,9 @@ attendance.leave_history = (req, result) => {
     COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0) AS total_allocated_leave
 
 FROM 
-    crm_dev_db.cor_leave_summary sm
+    romsondb.cor_leave_summary sm
 LEFT JOIN 
-    crm_dev_db.cor_leave_m lm 
+    romsondb.cor_leave_m lm 
 ON 
     sm.emp_id = lm.emp_id 
     AND sm.leave_type = lm.leave_type
@@ -1642,7 +1646,7 @@ GROUP BY
 ///for select leave type
 
 attendance.LeaveType = (req, result) => {
-  sql.query(`select leave_type,leave_description from crm_dev_db.cor_leave_type`, (err, res) => {
+  sql.query(`select leave_type,leave_description from romsondb.cor_leave_type`, (err, res) => {
     // console.log("osbss: ", res);
     if (err) {
       result({ error: true, data: "Something Went Wrong" })
@@ -1663,9 +1667,9 @@ attendance.HolidayList = (req, result) => {
       h.holiday_type,
       h.state_id
     FROM 
-      crm_dev_db.cor_holiday_m h
+      romsondb.cor_holiday_m h
     INNER JOIN 
-      crm_dev_db.cor_emp_m e ON FIND_IN_SET(e.state_id, h.state_id) > 0
+      romsondb.cor_emp_m e ON FIND_IN_SET(e.state_id, h.state_id) > 0
     WHERE 
       e.emp_id = '${req.body.empId}'  -- Replace dynamically with the logged-in employee ID
       AND h.year = '${req.body.year}'  -- Replace dynamically with the selected year
