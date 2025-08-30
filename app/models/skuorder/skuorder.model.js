@@ -20,18 +20,35 @@ const skuorder = function (osbs) {
 ////////item
 
 skuorder.skulist = (req, result) => {
-  sql.query(`SELECT sku.sku_id,sku.sku_name,sku.sku_price,sku.sku_gst,seg.segment_code,sku.sku_gst,divs.division_name, 0 total
-    FROM crm_dev_db.cor_sku_m AS sku
-    LEFT JOIN crm_dev_db.cor_segment_m AS seg ON sku.segment_id = seg.segment_id
-    LEFT JOIN crm_dev_db.cor_division_m AS divs ON sku.division_id = divs.division_id
-    where sku.division_id = '${req.body.division}' ORDER BY sku.sku_name ASC`,
-    (err, res) => {
-      console.log("osbss: ", res);
-      if (err) {
-        result({ error: true, data: "Something Went Wrong" })
-      }
-      result({ error: false, data: res })
-    });
+  if (req.body.division == "7") {
+    sql.query(`SELECT sku.sku_id,sku.sku_name,sku.sku_price,sku.sku_gst,seg.segment_code,sku.sku_gst,divs.division_name, 0 total
+      FROM romsondb.cor_sku_m AS sku
+      LEFT JOIN romsondb.cor_segment_m AS seg ON sku.segment_id = seg.segment_id
+      LEFT JOIN romsondb.cor_division_m AS divs ON sku.division_id = divs.division_id
+      ORDER BY sku.sku_name ASC`,
+      (err, res) => {
+        console.log("osbss: ", res);
+        if (err) {
+          result({ error: true, data: "Something Went Wrong" })
+        }
+        result({ error: false, data: res })
+      });
+
+  } else {
+    sql.query(`SELECT sku.sku_id,sku.sku_name,sku.sku_price,sku.sku_gst,seg.segment_code,sku.sku_gst,divs.division_name, 0 total
+      FROM romsondb.cor_sku_m AS sku
+      LEFT JOIN romsondb.cor_segment_m AS seg ON sku.segment_id = seg.segment_id
+      LEFT JOIN romsondb.cor_division_m AS divs ON sku.division_id = divs.division_id
+      where sku.division_id = '${req.body.division}' ORDER BY sku.sku_name ASC`,
+      (err, res) => {
+        console.log("osbss: ", res);
+        if (err) {
+          result({ error: true, data: "Something Went Wrong" })
+        }
+        result({ error: false, data: res })
+      });
+  }
+
 };
 
 ///////////filter
@@ -321,18 +338,40 @@ skuorder.Schememaster = (req, result) => {
 ///////hospital
 
 skuorder.skulisthospital = (req, result) => {
-  sql.query(`SELECT sku.sku_id,sku.sku_name,sku.sku_price,sku.sku_gst,seg.segment_code,sku.sku_gst,divs.division_name, 0 total
-      FROM crm_dev_db.cor_sku_m AS sku
-      LEFT JOIN crm_dev_db.cor_segment_m AS seg ON sku.segment_id = seg.segment_id
-      LEFT JOIN crm_dev_db.cor_division_m AS divs ON sku.division_id = divs.division_id
-      where sku.division_id = '${req.body.division}' ORDER BY sku.sku_name ASC`,
+  console.log(typeof(req.body.division),"dividion");
+  console.log(req.body.division,"req.body.division")
+  if (req.body.division == "7") {
+    
+    sql.query(`SELECT sku.sku_id,sku.sku_name,sku.sku_price,sku.sku_gst,seg.segment_code,sku.sku_gst,divs.division_name, 0 total
+      FROM romsondb.cor_sku_m AS sku
+      LEFT JOIN romsondb.cor_segment_m AS seg ON sku.segment_id = seg.segment_id
+      LEFT JOIN romsondb.cor_division_m AS divs ON sku.division_id = divs.division_id
+      ORDER BY sku.sku_name ASC`,
     (err, res) => {
-      console.log("osbss: ", res);
+    
       if (err) {
         result({ error: true, data: "Something Went Wrong" })
       }
       result({ error: false, data: res })
     });
+  } else {
+    sql.query(`SELECT sku.sku_id,sku.sku_name,sku.sku_price,sku.sku_gst,seg.segment_code,sku.sku_gst,divs.division_name, 0 total
+      FROM romsondb.cor_sku_m AS sku
+      LEFT JOIN romsondb.cor_segment_m AS seg ON sku.segment_id = seg.segment_id
+      LEFT JOIN romsondb.cor_division_m AS divs ON sku.division_id = divs.division_id
+      where sku.division_id = '${req.body.division}' ORDER BY sku.sku_name ASC`,
+    (err, res) => {
+    
+      if (err) {
+        result({ error: true, data: "Something Went Wrong" })
+      }
+      result({ error: false, data: res })
+    });
+   
+  }
+
+  
+ 
 };
 
 

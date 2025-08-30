@@ -113,7 +113,7 @@ attendance.attendance_punch_in = (req, result) => {
   const clientVersion = req.body.app_version;
   const minVersion = '7.0.0';
 
-  if (versionToNumber(clientVersion) < versionToNumber(minVersion) && versionToNumber(clientVersion)!= 0) {
+  if (versionToNumber(clientVersion) < versionToNumber(minVersion) && versionToNumber(clientVersion) != 0) {
     result({ msg: true, message: "You are using older version, please update the app from Play Store." });
     return;
   }
@@ -206,9 +206,9 @@ attendance.attendance_punchout = (req, result) => {
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
 
-  // Check if the current time is after 9 PM
-  if (currentHour > 19 || (currentHour === 19 && currentMinute > 30)) {
-    result({ error: true, message: "You are not allowed to punch out after 7:30 PM" });
+
+  if (currentHour > 14 || (currentHour === 14 && currentMinute > 0)) {
+    result({ error: true, message: "You are not allowed to punch out after 7:30 PM IST" });
     return;
   }
 
@@ -1239,7 +1239,7 @@ attendance.attandance_count = (req, result) => {
           WHEN a.leave_status = 2 THEN DATE_FORMAT(l.enter_date, '%Y-%m-%d')
           ELSE NULL
         END AS applied_date,
-        
+
         CASE 
           WHEN a.leave_status = 2 THEN d.punch_date
           WHEN EXISTS (
@@ -1286,54 +1286,56 @@ attendance.attandance_count = (req, result) => {
         return;
       }
 
-      const convertedResults = res.map(record => {
-        // Format punch-in and punch-out
-        if (record.punch_in_time !== '00:00:00') {
-          record.punch_in_time = moment
-            .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
-            .tz('Asia/Kolkata')
-            .format('h:mm A');
-        }
+      const convertedResults = res
+  .filter(record => !['11000011', '11000010'].includes(String(record.emp_id)))
+  .map(record => {
+    if (record.punch_in_time !== '00:00:00') {
+      record.punch_in_time = moment
+        .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
+        .tz('Asia/Kolkata')
+        .format('h:mm A');
+    }
 
-        if (record.punch_out_time !== '00:00:00') {
-          record.punch_out_time = moment
-            .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
-            .tz('Asia/Kolkata')
-            .format('h:mm A');
-        }
+    if (record.punch_out_time !== '00:00:00') {
+      record.punch_out_time = moment
+        .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
+        .tz('Asia/Kolkata')
+        .format('h:mm A');
+    }
 
-        // Format total_hours as HH:MM
-        if (
-          record.punch_in_time !== '00:00:00' &&
-          record.punch_out_time !== '00:00:00'
-        ) {
-          const punchInMoment = moment(record.punch_in_time, 'h:mm A');
-          const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
+    // Format total_hours as HH:MM
+    if (
+      record.punch_in_time !== '00:00:00' &&
+      record.punch_out_time !== '00:00:00'
+    ) {
+      const punchInMoment = moment(record.punch_in_time, 'h:mm A');
+      const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
 
-          const duration = moment.duration(punchOutMoment.diff(punchInMoment));
-          const totalHours = Math.floor(duration.asHours());
-          const totalMinutes = duration.minutes();
+      const duration = moment.duration(punchOutMoment.diff(punchInMoment));
+      const totalHours = Math.floor(duration.asHours());
+      const totalMinutes = duration.minutes();
 
-          record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
-            .toString()
-            .padStart(2, '0')}`;
-        } else {
-          record.total_hours = '00:00';
-        }
+      record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
+        .toString()
+        .padStart(2, '0')}`;
+    } else {
+      record.total_hours = '00:00';
+    }
 
-        // Generate fake attendance_id if null
-        if (!record.attendance_id) {
-          const fixedPrefix = '100';
-          const uniqueKey = `${record.emp_id}-${record.punch_date}`;
-          const hash = crypto.createHash('sha256')
-            .update(uniqueKey)
-            .digest('hex');
-          const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
-          record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
-        }
+    // Generate fake attendance_id if null
+    if (!record.attendance_id) {
+      const fixedPrefix = '100';
+      const uniqueKey = `${record.emp_id}-${record.punch_date}`;
+      const hash = crypto.createHash('sha256')
+        .update(uniqueKey)
+        .digest('hex');
+      const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
+      record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
+    }
 
-        return record;
-      });
+    return record;
+  });
+
 
       result({ error: false, data: convertedResults });
     });
@@ -1364,41 +1366,56 @@ attendance.attendance_monthly = (req, result) => {
     const dateUnion = dateArray.map(date => `SELECT '${date}' AS punch_date`).join(' UNION ALL ');
 
     const query = `
-      WITH calendar_dates AS (
-        ${dateUnion}
-      )
-      SELECT 
-        d.punch_date,
-        e.emp_id,
-        TRIM(e.emp_code) AS emp_code,
-        TRIM(e.user_name) AS user_name,
-        dsg.designation_name,
-        CASE
-        WHEN  a.leave_status = 2 THEN 'L'
-  WHEN d.punch_date > CURRENT_DATE() THEN ''
-        WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
-              WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
-            WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
-          WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A'
-          WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
-          WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
-          ELSE 'A'
-        END AS attendance_status
-      FROM calendar_dates d
-      CROSS JOIN romsondb.cor_emp_m e
-      LEFT JOIN romsondb.cor_attendance_m a 
-        ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
-      LEFT JOIN romsondb.cor_leave_m l 
-        ON e.emp_id = l.emp_id 
-        AND l.start_date <= d.punch_date 
-        AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
-        LEFT JOIN romsondb.cor_holiday_m h 
-    ON FIND_IN_SET(e.state_id, h.state_id) > 0
-    AND h.date = d.punch_date
-      LEFT JOIN romsondb.cor_designation_m dsg 
-        ON e.designation = dsg.designation_id
-      WHERE e.status = 'A'
-      ORDER BY e.emp_id, d.punch_date
+WITH calendar_dates AS (
+  ${dateUnion}
+)
+SELECT 
+  d.punch_date,
+  e.emp_id,
+  TRIM(e.emp_code) AS emp_code,
+  TRIM(e.user_name) AS user_name,
+  dsg.designation_name,
+  MAX(l.leave_type) AS leave_type,
+  CASE
+      WHEN d.punch_date > CURRENT_DATE() OR (e.deleted_at IS NOT NULL AND d.punch_date > e.deleted_at) THEN ''
+          WHEN MAX(a.leave_status) = 2 AND MAX(l.leave_type) = 'LOP' THEN 'LOP'
+    WHEN MAX(a.leave_status) = 2 THEN 'L'
+    WHEN l.status = 1 THEN 'PL'
+    WHEN MAX(h.date IS NOT NULL) AND MAX(a.punch_in IS NULL AND a.punch_out IS NULL) THEN 'PHY'
+    WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND MAX(h.date) IS NULL AND MAX(a.punch_in) IS NULL AND MAX(a.punch_out) IS NULL THEN 'WEO'
+    WHEN DAYOFWEEK(d.punch_date) = 1 AND MAX(a.punch_in) IS NULL AND MAX(a.punch_out) IS NULL THEN 'WEO'
+    WHEN MAX(a.punch_in) IS NULL AND MAX(a.punch_out) IS NULL AND d.punch_date <= CURRENT_DATE() THEN 'A'
+        WHEN a.punch_in IS NOT NULL AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) > '10:30:00' THEN 'ABSHD'
+
+        WHEN MAX(a.status) = 1 AND MAX(a.punch_in) IS NOT NULL AND MAX(a.punch_out) IS NOT NULL THEN 'P'
+     WHEN a.punch_in IS NOT NULL AND a.punch_out IS NULL AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) <= '10:30:00' THEN 'P'
+
+    WHEN d.punch_date > CURRENT_DATE() THEN ''
+    ELSE 'A'
+  END AS attendance_status,
+CASE WHEN MAX(r.Regular_id) IS NOT NULL THEN 1 ELSE 0 END AS regularized
+FROM calendar_dates d
+CROSS JOIN romsondb.cor_emp_m e
+LEFT JOIN romsondb.cor_attendance_m a 
+  ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+LEFT JOIN romsondb.cor_leave_m l 
+  ON e.emp_id = l.emp_id 
+  AND l.start_date <= d.punch_date 
+  AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+LEFT JOIN romsondb.cor_holiday_m h 
+  ON FIND_IN_SET(e.state_id, h.state_id) > 0
+  AND h.date = d.punch_date
+LEFT JOIN romsondb.cor_designation_m dsg 
+  ON e.designation = dsg.designation_id
+  LEFT JOIN romsondb.cor_regulization_m r
+  ON r.enter_by = e.emp_id
+  AND r.request_date = d.punch_date
+  AND r.status = 'A'
+WHERE (e.user_locked_date IS NULL OR e.user_locked_date <= d.punch_date)
+AND (e.deleted_at IS NULL OR e.deleted_at >= d.punch_date)
+GROUP BY e.emp_id, d.punch_date
+ORDER BY e.emp_id, d.punch_date
+
     `;
 
     sql.query(query, (err, res) => {
@@ -1415,6 +1432,8 @@ attendance.attendance_monthly = (req, result) => {
         const empId = row.emp_id;
         const day = new Date(row.punch_date).getDate();
         const status = row.attendance_status;
+        const leaveType = row.leave_type ? row.leave_type.toUpperCase() : null; // ← declare here
+
 
         if (!employeeMap[empId]) {
           employeeMap[empId] = {
@@ -1427,23 +1446,79 @@ attendance.attendance_monthly = (req, result) => {
             leave: 0,
             holiday: 0,
             absent: 0,
-            month_days: daysInMonth
+            weo: 0,
+            lop_days: 0,
+            ml_days: 0,
+            total_working_days: 0,
+            month_days: daysInMonth,
+            pending_leave: 0,
+            regularized_present: 0
           };
         }
+
+        if (leaveType === 'ML') {
+          // ML-specific logic
+          for (let i = 1; i <= daysInMonth; i++) {
+            employeeMap[empId][i] = 'ML';
+          }
+          employeeMap[empId].total_working_days = 0;
+          employeeMap[empId].ml_days = daysInMonth;
+          continue; // skip normal processing
+        }
+
 
         employeeMap[empId][day] = status;
 
         // Accurate count only on valid working status
+        // Count attendance types
+
+        // const leaveType = row.leave_type;
+
+        // Track leave types properly
+        if (!employeeMap[empId].leave) {
+          employeeMap[empId].leave = { EL: 0, SL: 0, CL: 0, TOTAL: 0 };
+        }
+
         if (status === 'P') {
           employeeMap[empId].present_days += 1;
+          employeeMap[empId].total_working_days += 1;
+          if (row.regularized === 1) {
+            employeeMap[empId].regularized_present += 1;
+            employeeMap[empId][day] = 'P*';
+          } else {
+            employeeMap[empId][day] = 'P';
+          }
         } else if (status === 'ABSHD') {
-          employeeMap[empId].half_days += 1;
+          employeeMap[empId].half_days += 0.5;
+          employeeMap[empId].total_working_days += 0.5;
         } else if (status === 'L') {
-          employeeMap[empId].leave += 1;
+
+          const leaveLabel = leaveType ? leaveType.toUpperCase() : null;
+          if (['EL', 'CL', 'SL'].includes(leaveLabel)) {
+            employeeMap[empId][day] = leaveLabel;
+            employeeMap[empId].leave[leaveLabel] += 1;
+            employeeMap[empId].leave.TOTAL += 1;
+            employeeMap[empId].total_working_days += 1;
+          } else {
+            employeeMap[empId][day] = 'L'; // fallback
+          }
+        } else if (status === 'LOP') {  // ✅ Add here
+          employeeMap[empId][day] = 'LOP';
+          employeeMap[empId].lop_days += 1;
+          // employeeMap[empId].total_working_days += 1;
+        } else if (status === 'PL') {
+          // Pending leave
+          employeeMap[empId].pending_leave += 1;
+          employeeMap[empId][day] = 'PL';
+
         } else if (status === 'PHY') {
           employeeMap[empId].holiday += 1;
+          employeeMap[empId].total_working_days += 1;
         } else if (status === 'A') {
           employeeMap[empId].absent += 1;
+        } else if (status === 'WEO') {
+          employeeMap[empId].weo += 1;
+          employeeMap[empId].total_working_days += 1;
         }
       }
 
@@ -1475,7 +1550,7 @@ attendance.punchInOutTime = (req, result) => {
     AND (
       DATE(CONVERT_TZ(punch_in, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
       OR DATE(CONVERT_TZ(punch_out, '+00:00', '+05:30')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+05:30'))
-    );
+    ) and punch_date = '2025-07-26';
   `, (err, res) => {
 
     console.log("Result Data: ", res);
@@ -1690,6 +1765,100 @@ attendance.HolidayList = (req, result) => {
 ///////////////////leaveReportSummary with new table cor_leave_summary//////////////////////
 
 
+// attendance.leaveReportSummary = (req, result) => {
+//   const { fromDate, toDate, statusFilter } = req.body;
+
+//   // Build status condition dynamically
+//   let statusCondition = "";
+//   if (statusFilter === "Pending") {
+//     statusCondition = "AND lm.status = 1 AND lm.approved_by IS NULL";
+//   } else if (statusFilter === "Accepted") {
+//     statusCondition = "AND lm.status = 1 AND lm.approved_by IS NOT NULL";
+//   } else if (statusFilter === "Rejected") {
+//     statusCondition = "AND lm.status = 3";
+//   }
+
+//   const query = `
+//     SELECT 
+//       lm.emp_id,
+//       em.user_name,
+//        em.head_quater_name,
+//       lm.leave_type,
+//       DATE_FORMAT(lm.start_date, '%Y-%m-%d') AS start_date,
+//       DATE_FORMAT(lm.end_date, '%Y-%m-%d') AS end_date,
+//       CONCAT(DATE_FORMAT(lm.start_date, '%d-%b-%Y'), ' - ', DATE_FORMAT(lm.end_date, '%d-%b-%Y')) AS leave_from_to,
+//       lm.leave_days,
+//       lm.leave_reason,
+//       CONCAT(lm.reporting_to, ' - ', r.user_name) AS reporting_to_name,
+//       CONCAT(lm.approved_by, ' - ', ab.user_name) AS approved_by,
+//       DATE_FORMAT(lm.approved_date, '%Y-%m-%d') AS approved_date,
+//       CASE 
+//         WHEN lm.status = 3 THEN 'Rejected'
+//         WHEN lm.status = 2 AND lm.approved_by IS NOT NULL THEN 'Accepted'
+//         WHEN lm.status = 1 AND lm.approved_by IS NULL THEN 'Pending'
+//         ELSE 'Unknown'
+//       END AS status,
+
+//       (
+//         COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
+//         COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
+//         COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
+//       ) AS total_allocated_leave,
+
+//       (
+//         SELECT 
+//           COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
+//           COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
+//           COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+//         FROM romsondb.cor_leave_m lm2
+//         WHERE lm2.emp_id = lm.emp_id
+//           AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+//       ) AS total_availed_leave,
+
+//       (
+//         (
+//           COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
+//           COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
+//           COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
+//         ) -
+//         (
+//           SELECT 
+//             COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
+//             COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
+//             COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+//           FROM romsondb.cor_leave_m lm2
+//           WHERE lm2.emp_id = lm.emp_id
+//             AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+//         )
+//       ) AS total_balance_leave
+
+//     FROM romsondb.cor_leave_m lm
+//     JOIN romsondb.cor_emp_m em ON em.emp_id = lm.emp_id
+//     LEFT JOIN romsondb.cor_leave_summary sm ON sm.emp_id = lm.emp_id
+//     LEFT JOIN romsondb.cor_emp_m r ON r.emp_id = lm.reporting_to
+//     LEFT JOIN romsondb.cor_emp_m ab ON ab.emp_id = lm.approved_by
+
+//     WHERE lm.start_date <= '${toDate}'
+//       AND lm.end_date >= '${fromDate}'
+//       ${statusCondition}
+
+//     GROUP BY lm.id
+//     ORDER BY lm.start_date ASC;
+//   `;
+
+//   console.log("Executing Query:", query);
+
+//   sql.query(query, (err, res) => {
+//     if (err) {
+//       console.error("Query Error:", err);
+//       result({ error: true, data: "Something Went Wrong" });
+//     } else {
+//       result({ error: false, data: res });
+//     }
+//   });
+// };
+
+
 attendance.leaveReportSummary = (req, result) => {
   const { fromDate, toDate, statusFilter } = req.body;
 
@@ -1698,77 +1867,165 @@ attendance.leaveReportSummary = (req, result) => {
   if (statusFilter === "Pending") {
     statusCondition = "AND lm.status = 1 AND lm.approved_by IS NULL";
   } else if (statusFilter === "Accepted") {
-    statusCondition = "AND lm.status = 1 AND lm.approved_by IS NOT NULL";
+    statusCondition = "AND lm.status = 2 AND lm.approved_by IS NOT NULL";
   } else if (statusFilter === "Rejected") {
     statusCondition = "AND lm.status = 3";
   }
 
   const query = `
-    SELECT 
-      lm.emp_id,
-      em.user_name,
-       em.head_quater_name,
-      lm.leave_type,
-      DATE_FORMAT(lm.start_date, '%Y-%m-%d') AS start_date,
-      DATE_FORMAT(lm.end_date, '%Y-%m-%d') AS end_date,
-      CONCAT(DATE_FORMAT(lm.start_date, '%d-%b-%Y'), ' - ', DATE_FORMAT(lm.end_date, '%d-%b-%Y')) AS leave_from_to,
-      lm.leave_days,
-      lm.leave_reason,
-      CONCAT(lm.reporting_to, ' - ', r.user_name) AS reporting_to_name,
-      CONCAT(lm.approved_by, ' - ', ab.user_name) AS approved_by,
-      DATE_FORMAT(lm.approved_date, '%Y-%m-%d') AS approved_date,
-      CASE 
-        WHEN lm.status = 3 THEN 'Rejected'
-        WHEN lm.status = 2 AND lm.approved_by IS NOT NULL THEN 'Accepted'
-        WHEN lm.status = 1 AND lm.approved_by IS NULL THEN 'Pending'
-        ELSE 'Unknown'
-      END AS status,
+  SELECT 
+    lm.emp_id,
+    em.user_name,
+    em.head_quater_name,
+    lm.leave_type,
+    DATE_FORMAT(lm.start_date, '%Y-%m-%d') AS start_date,
+    DATE_FORMAT(lm.end_date, '%Y-%m-%d') AS end_date,
+    CONCAT(DATE_FORMAT(lm.start_date, '%d-%b-%Y'), ' - ', DATE_FORMAT(lm.end_date, '%d-%b-%Y')) AS leave_from_to,
+    lm.leave_days,
+    lm.leave_reason,
+    CONCAT(lm.reporting_to, ' - ', r.user_name) AS reporting_to_name,
+    CONCAT(lm.approved_by, ' - ', ab.user_name) AS approved_by,
+    DATE_FORMAT(lm.approved_date, '%Y-%m-%d') AS approved_date,
 
-      (
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
-      ) AS total_allocated_leave,
+    CASE 
+      WHEN lm.status = 3 THEN 'Rejected'
+      WHEN lm.status = 2 AND lm.approved_by IS NOT NULL THEN 'Accepted'
+      WHEN lm.status = 1 AND lm.approved_by IS NULL THEN 'Pending'
+      ELSE 'Unknown'
+    END AS status,
 
+    -- Total Allocated
+    COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count END), 0) AS total_allocated_cl,
+    COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count END), 0) AS total_allocated_el,
+    COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count END), 0) AS total_allocated_sl,
+    (
+      COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count END), 0) +
+      COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count END), 0) +
+      COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count END), 0)
+    ) AS total_allocated_leave,
+
+    -- Total Availed
+    (
+      SELECT COALESCE(SUM(lm2.leave_days), 0)
+      FROM romsondb.cor_leave_m lm2
+      WHERE lm2.emp_id = lm.emp_id
+        AND lm2.leave_type = 'CL'
+            AND lm2.start_date <= '${toDate}' AND lm2.end_date >= '${fromDate}'
+    ) AS total_availed_cl,
+
+    (
+      SELECT COALESCE(SUM(lm2.leave_days), 0)
+      FROM romsondb.cor_leave_m lm2
+      WHERE lm2.emp_id = lm.emp_id
+        AND lm2.leave_type = 'EL'
+    AND lm2.start_date <= '${toDate}' AND lm2.end_date >= '${fromDate}'
+    ) AS total_availed_el,
+
+    (
+      SELECT COALESCE(SUM(lm2.leave_days), 0)
+      FROM romsondb.cor_leave_m lm2
+      WHERE lm2.emp_id = lm.emp_id
+        AND lm2.leave_type = 'SL'
+            AND lm2.start_date <= '${toDate}' AND lm2.end_date >= '${fromDate}'
+    ) AS total_availed_sl,
+
+    (
+      SELECT 
+        COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
+        COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
+        COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+      FROM romsondb.cor_leave_m lm2
+      WHERE lm2.emp_id = lm.emp_id
+        AND lm2.start_date <= '${toDate}' 
+    AND lm2.end_date >= '${fromDate}'
+    ) AS total_availed_leave,
+
+ -- Total Balance CL
+(
+  COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count END), 0) -
+  (
+    SELECT COALESCE(SUM(lm2.leave_days), 0)
+    FROM romsondb.cor_leave_m lm2
+    WHERE lm2.emp_id = lm.emp_id
+      AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+      AND lm2.leave_type = 'CL'
+  )
+) AS total_balance_cl,
+
+-- Total Balance EL
+(
+  COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count END), 0) -
+  (
+    SELECT COALESCE(SUM(lm2.leave_days), 0)
+    FROM romsondb.cor_leave_m lm2
+    WHERE lm2.emp_id = lm.emp_id
+      AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+      AND lm2.leave_type = 'EL'
+  )
+) AS total_balance_el,
+
+-- Total Balance SL
+(
+  COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count END), 0) -
+  (
+    SELECT COALESCE(SUM(lm2.leave_days), 0)
+    FROM romsondb.cor_leave_m lm2
+    WHERE lm2.emp_id = lm.emp_id
+      AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+      AND lm2.leave_type = 'SL'
+  )
+) AS total_balance_sl,
+
+-- Total Balance Leave (Always positive sum)
+(
+  GREATEST(
+    (
+      COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count END), 0) -
       (
-        SELECT 
-          COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
-          COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
-          COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
+        SELECT COALESCE(SUM(lm2.leave_days), 0)
         FROM romsondb.cor_leave_m lm2
         WHERE lm2.emp_id = lm.emp_id
           AND YEAR(lm2.enter_date) = YEAR(CURDATE())
-      ) AS total_availed_leave,
-
+          AND lm2.leave_type = 'CL'
+      )
+    ), 0
+  ) +
+  GREATEST(
+    (
+      COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count END), 0) -
       (
-        (
-          COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 0) +
-          COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 0) +
-          COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0)
-        ) -
-        (
-          SELECT 
-            COALESCE(SUM(CASE WHEN lm2.leave_type = 'CL' THEN lm2.leave_days ELSE 0 END), 0) +
-            COALESCE(SUM(CASE WHEN lm2.leave_type = 'EL' THEN lm2.leave_days ELSE 0 END), 0) +
-            COALESCE(SUM(CASE WHEN lm2.leave_type = 'SL' THEN lm2.leave_days ELSE 0 END), 0)
-          FROM romsondb.cor_leave_m lm2
-          WHERE lm2.emp_id = lm.emp_id
-            AND YEAR(lm2.enter_date) = YEAR(CURDATE())
-        )
-      ) AS total_balance_leave
+        SELECT COALESCE(SUM(lm2.leave_days), 0)
+        FROM romsondb.cor_leave_m lm2
+        WHERE lm2.emp_id = lm.emp_id
+          AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+          AND lm2.leave_type = 'EL'
+      )
+    ), 0
+  ) +
+  GREATEST(
+    (
+      COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count END), 0) -
+      (
+        SELECT COALESCE(SUM(lm2.leave_days), 0)
+        FROM romsondb.cor_leave_m lm2
+        WHERE lm2.emp_id = lm.emp_id
+          AND YEAR(lm2.enter_date) = YEAR(CURDATE())
+          AND lm2.leave_type = 'SL'
+      )
+    ), 0
+  )
+) AS total_balance_leave
 
-    FROM romsondb.cor_leave_m lm
-    JOIN romsondb.cor_emp_m em ON em.emp_id = lm.emp_id
-    LEFT JOIN romsondb.cor_leave_summary sm ON sm.emp_id = lm.emp_id
-    LEFT JOIN romsondb.cor_emp_m r ON r.emp_id = lm.reporting_to
-    LEFT JOIN romsondb.cor_emp_m ab ON ab.emp_id = lm.approved_by
 
-    WHERE lm.start_date <= '${toDate}'
+  FROM romsondb.cor_leave_m lm
+  LEFT JOIN romsondb.cor_emp_m em ON lm.emp_id = em.emp_id
+  LEFT JOIN romsondb.cor_leave_summary sm ON sm.emp_id = lm.emp_id AND sm.year = YEAR(CURDATE())
+  LEFT JOIN romsondb.cor_emp_m r ON r.emp_code = lm.reporting_to
+  LEFT JOIN romsondb.cor_emp_m ab ON ab.emp_id = lm.approved_by
+       WHERE lm.start_date <= '${toDate}'
       AND lm.end_date >= '${fromDate}'
       ${statusCondition}
-
-    GROUP BY lm.id
-    ORDER BY lm.start_date ASC;
+  GROUP BY lm.id;
   `;
 
   console.log("Executing Query:", query);
@@ -1784,11 +2041,11 @@ attendance.leaveReportSummary = (req, result) => {
 };
 
 
+
 ////////////////crm- report day-wise-attendance data///////////////////////
 
 attendance.DayWiseAttendanceReport = (req, result) => {
   const { fromDate, toDate } = req.query;
-
 
   const query = `
  WITH RECURSIVE date_range AS (
@@ -1797,44 +2054,580 @@ attendance.DayWiseAttendanceReport = (req, result) => {
     SELECT DATE_ADD(punch_date, INTERVAL 1 DAY)
     FROM date_range
     WHERE punch_date < '${toDate}'
+),
+attendance_data AS (
+    SELECT 
+        e.emp_id,
+        TRIM(e.emp_code) AS emp_code,
+        e.user_name,
+        DATE_FORMAT(d.punch_date, '%d-%m-%Y') AS punch_date,
+        a.app_version,
+        DATE_FORMAT(CONVERT_TZ(a.punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
+        DATE_FORMAT(CONVERT_TZ(a.punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
+
+        CASE 
+            WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 
+                CONCAT(
+                    FLOOR(TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out)/3600), ' hours ',
+                    FLOOR((TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out) % 3600)/60), ' minutes'
+                )
+            ELSE '0 hours 0 minutes'
+        END AS total_hours,
+
+        CASE 
+    WHEN a.leave_status = 2 THEN 'L'
+    WHEN l.status = 1 THEN 'PL'
+    WHEN d.punch_date > CURRENT_DATE() THEN ''
+    WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
+    WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+    WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+    WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A'
+    -- Late punch_in, ABSHD, chahe punch_out ho ya na ho
+    WHEN a.punch_in IS NOT NULL AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) > '10:30:00' THEN 'ABSHD'
+    -- Full presence
+    WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 'P'
+    -- Early punch_in without punch_out
+    WHEN a.punch_in IS NOT NULL AND (a.punch_out IS NULL OR a.punch_out = '0000-00-00 00:00:00')
+         AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) <= '10:30:00' THEN 'P'
+    ELSE 'A'
+END AS attendance_status,
+
+
+        CASE 
+            WHEN a.leave_status = 2 THEN a.leave_type
+            ELSE '0'
+        END AS leave_type,
+
+        ROW_NUMBER() OVER (
+            PARTITION BY e.emp_id, d.punch_date
+            ORDER BY 
+                CASE 
+                    WHEN a.leave_status = 2 THEN 1  -- Approved leave highest priority
+                    WHEN l.status = 1 THEN 2       -- Pending leave next
+                    ELSE 3                         -- Attendance last
+                END
+        ) AS rn
+
+    FROM romsondb.cor_emp_m e
+    CROSS JOIN date_range d
+    LEFT JOIN romsondb.cor_attendance_m a 
+        ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+    LEFT JOIN romsondb.cor_holiday_m h 
+        ON h.date = d.punch_date AND (h.state_id = e.state_id OR h.state_id IS NULL)
+    LEFT JOIN romsondb.cor_leave_m l 
+        ON e.emp_id = l.emp_id 
+        AND d.punch_date BETWEEN l.start_date AND l.end_date 
+        AND l.status = 1
+
+    WHERE 
+        (e.user_locked_date IS NULL OR e.user_locked_date <= d.punch_date)
+        AND (e.deleted_at IS NULL OR e.deleted_at >= d.punch_date)
+        AND MONTH(d.punch_date) = MONTH('${fromDate}')
+        AND YEAR(d.punch_date) = YEAR('${fromDate}')
+)
+SELECT * FROM attendance_data WHERE rn = 1
+ORDER BY emp_code, punch_date;
+  `;
+
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+
+// attendance.DayWiseAttendanceReport = (req, result) => {
+//   const { fromDate, toDate } = req.query;
+
+//   const query = `
+//     WITH RECURSIVE date_range AS (
+//       SELECT DATE('${fromDate}') AS punch_date
+//       UNION ALL
+//       SELECT DATE_ADD(punch_date, INTERVAL 1 DAY)
+//       FROM date_range
+//       WHERE punch_date < '${toDate}'
+//     )
+
+//     SELECT 
+//         e.emp_id,
+//         TRIM(e.emp_code) AS emp_code,
+//         e.user_name,
+//         DATE_FORMAT(d.punch_date, '%d-%m-%Y') AS punch_date,
+//         a.app_version,
+//         DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
+//         DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
+
+//         CASE 
+//             WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 
+//                 CONCAT(
+//                     FLOOR(TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out)/3600), ' hours ',
+//                     FLOOR((TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out) % 3600)/60), ' minutes'
+//                 )
+//             ELSE '0 hours 0 minutes'
+//         END AS total_hours,
+
+//         CASE 
+//             WHEN a.leave_status = 2 THEN 'L'
+//             WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 'P'
+//             ELSE 'A'
+//         END AS attendance_status,
+
+//         CASE 
+//             WHEN a.leave_status = 2 THEN a.leave_type
+//             ELSE '0'
+//         END AS leave_type
+
+//     FROM 
+//         romsondb.cor_emp_m e
+//     CROSS JOIN 
+//         date_range d
+//     LEFT JOIN 
+//         romsondb.cor_attendance_m a 
+//         ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+//     WHERE 
+//         -- e.status = 'A' -- 👈❌ Temporarily removed this filter
+//         MONTH(d.punch_date) = MONTH('${fromDate}')
+//         AND YEAR(d.punch_date) = YEAR('${fromDate}')
+//     ORDER BY 
+//         e.emp_code, d.punch_date;
+//   `;
+
+//   console.log("Executing Query:", query);
+
+//   sql.query(query, (err, res) => {
+//     if (err) {
+//       console.error("Query Error:", err);
+//       result({ error: true, data: "Something Went Wrong" });
+//     } else {
+//       result({ error: false, data: res });
+//     }
+//   });
+// };
+
+
+
+///////////////////////crm_tracker_report/////////////////
+
+
+
+attendance.UserList = (req, result) => {
+  const query = `
+ SELECT emp_id, user_name 
+FROM romsondb.cor_emp_m 
+WHERE status = 'A'
+ORDER BY user_name asc;
+  `;
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+
+
+/////////////////////////crm_outlet_report/////////////////////////
+
+
+const getAddress = async (lat, lng) => {
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=AIzaSyC4cMHPr8PdH18gyzIJ6YMlTJSHEDGwvNM`
+    );
+    const data = await response.json();
+    if (data.results && data.results.length > 0) {
+      return data.results[0].formatted_address;
+    }
+    return "Address not found";
+  } catch (error) {
+    console.error("Google Maps API error:", error);
+    return "Error fetching address";
+  }
+};
+
+attendance.outletReport = async (req, result) => {
+  const { emp_id, from, to } = req.query;
+
+  const query = `
+    (
+      SELECT 
+        outlet.outlet_id,
+        outlet.outlet_name,
+        city.city_name,
+        emp.user_name,
+        TIME_FORMAT(CONVERT_TZ(m.order_time, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
+        m.order_lat AS lat,
+        m.order_lag AS lng,
+        'ORDER' AS source,
+        DATE_FORMAT(m.order_date, '%Y-%m-%d') AS punch_date,
+        NULL AS task_name,
+        NULL AS task_remarks,
+        NULL AS follow_up_date 
+      FROM romsondb.cor_order_m m
+      JOIN romsondb.cor_outlet_m outlet ON m.outlet_id = outlet.outlet_id
+      LEFT JOIN romsondb.cor_city_m city ON outlet.city_id = city.city_id
+      LEFT JOIN romsondb.cor_emp_m emp ON m.employee_id = emp.emp_id
+      WHERE m.employee_id = '${emp_id}'
+        AND m.order_date BETWEEN '${from}' AND '${to}'
+        AND m.order_lat IS NOT NULL AND m.order_lat <> '' AND m.order_lat <> '...'
+        AND m.order_lag IS NOT NULL AND m.order_lag <> '' AND m.order_lag <> '...'
+    )
+    UNION ALL
+ (
+  SELECT 
+    outlet.outlet_id,
+    outlet.outlet_name,
+    city.city_name,
+    emp.user_name,
+    TIME_FORMAT(CONVERT_TZ(act.enter_date, '+00:00', 'Asia/Kolkata'), '%h:%i %p') AS date,
+    act.act_lat AS lat,
+    act.act_long AS lng,
+    'ACTIVITY' AS source,
+    DATE_FORMAT(act.activity_date, '%Y-%m-%d') AS punch_date,
+    outlet.outlet_name AS task_name,
+    COALESCE(
+      TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(t.task_name, '[remarks]', -1), '[', 1)),
+      act.remark
+    ) AS task_remarks,
+    NULL AS follow_up_date 
+  FROM romsondb.cor_outlet_activity_m act
+  LEFT JOIN romsondb.cor_outlet_m outlet ON act.outlet_id = outlet.outlet_id
+  LEFT JOIN romsondb.cor_city_m city ON outlet.city_id = city.city_id
+  LEFT JOIN romsondb.cor_emp_m emp ON act.enter_by = emp.emp_id
+  LEFT JOIN romsondb.cor_task_m t ON t.activity_id = act.activity_id
+  WHERE act.enter_by = '${emp_id}'
+    AND act.activity_date BETWEEN '${from}' AND '${to}'
+    AND act.act_lat IS NOT NULL AND act.act_lat <> '' AND act.act_lat <> '...'
+    AND act.act_long IS NOT NULL AND act.act_long <> '' AND act.act_long <> '...'
 )
 
+    UNION ALL
+    (
+      SELECT 
+        NULL AS outlet_id,
+        NULL AS outlet_name,
+        NULL AS city_name,
+        emp.user_name,
+        NULL AS date,
+        NULL AS lat,
+        NULL AS lng,
+        'NEW TASK' AS source,
+        DATE_FORMAT(t.enter_date, '%Y-%m-%d') AS punch_date,
+        t.task_name AS task_name,
+        t.remarks AS task_remarks,
+        t.follow_up AS follow_up_date
+      FROM romsondb.cor_task_m t
+      LEFT JOIN romsondb.cor_emp_m emp ON t.enter_by = emp.emp_id
+      WHERE t.enter_by = '${emp_id}'
+        AND t.enter_date BETWEEN '${from}' AND '${to}'
+        AND t.activity_id IS NULL
+    )
+
+    ORDER BY punch_date, date;
+  `;
+
+  try {
+    // 🔍 Step 1: Fetch employee address first
+    const empAddressQuery = `SELECT address FROM romsondb.cor_emp_m WHERE emp_id = '${emp_id}'`;
+
+    sql.query(empAddressQuery, async (empErr, empRes) => {
+      if (empErr || !empRes || empRes.length === 0) {
+        console.error("Error fetching employee address:", empErr);
+        return result({ error: true, data: "Failed to get employee address" });
+      }
+
+      const employeeAddress = empRes[0].address || "N/A";
+
+      // 🔍 Step 2: Run main data query
+      sql.query(query, async (err, res) => {
+        if (err) {
+          console.error("Query Error:", err);
+          return result({ error: true, data: "Something Went Wrong" });
+        }
+
+        // 🔄 Step 3: Attach dynamic location and emp address to each item
+        for (const item of res) {
+          if (item.lat && item.lng) {
+            item.address = await getAddress(item.lat, item.lng);
+          } else {
+            item.address = "Location not available";
+          }
+
+          item.emp_address = employeeAddress;
+        }
+
+        result({ error: false, data: res });
+      });
+    });
+  } catch (e) {
+    console.error("API error:", e);
+    result({ error: true, data: "Internal Server Error" });
+  }
+};
+
+
+//////////////////crm_performance_summary_report////////////////////////
+
+attendance.Zonelist = (req, result) => {
+  const query = `
+ select zone_id, zone_name from romsondb.cor_zone_m;
+  `;
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+attendance.Divisionlist = (req, result) => {
+  const query = `
+select division_id, division_name from romsondb.cor_division_m
+  `;
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+attendance.PerformanceSummary = (req, result) => {
+  const {
+    from_date,
+    to_date,
+    division_id,
+    zone_id
+  } = req.query;
+
+  let whereClause = `WHERE em.deleted_at IS NULL`;
+  const params = [];
+
+  // Zone filter
+  if (zone_id) {
+    whereClause += ` AND em.zone_id = ?`;
+    params.push(zone_id);
+  }
+
+  // Division filter
+  if (division_id) {
+    whereClause += ` AND em.division = ?`;
+    params.push(division_id);
+  }
+
+  // Date filter logic
+  if (from_date && to_date) {
+    whereClause += ` AND mtp.outlet_date BETWEEN ? AND ?`;
+    params.push(from_date, to_date);
+  } else if (from_date && !to_date) {
+    whereClause += ` AND mtp.outlet_date = ?`;
+    params.push(from_date);
+  } else if (!from_date && !to_date) {
+    whereClause += ` AND mtp.outlet_date = CURDATE()`;
+  }
+
+  const query = `
+
+   SELECT 
+  DATE_FORMAT(mtp.outlet_date, '%Y-%m-%d') AS mtp_date,
+  CONCAT(mtp.user_id, '-', em.user_name) AS employee_id_name,
+  divm.division_name,  
+  DATE_FORMAT(aam.punch_date, '%Y-%m-%d') AS punch_date,
+  
+  CASE 
+    WHEN DAYOFWEEK(aam.punch_date) = 1 THEN 
+      CASE
+        WHEN aam.leave_status = 2 THEN 'Leave'
+        WHEN aam.punch_in IS NULL AND aam.punch_out IS NULL THEN 'Week Off'
+        ELSE 
+          CASE 
+            WHEN h.date IS NOT NULL AND aam.punch_in IS NULL AND aam.punch_out IS NULL THEN 'Holiday'
+            WHEN em.state_id = 39 AND DAYOFWEEK(aam.punch_date) = 7 AND h.date IS NULL AND aam.punch_in IS NULL AND aam.punch_out IS NULL THEN 'Week Off'
+            WHEN aam.leave_status = 1 THEN 'Absent'
+            WHEN aam.status = 1 AND TIMESTAMPDIFF(HOUR, aam.punch_in, aam.punch_out) >= 8 THEN 'Present'
+            WHEN aam.status = 1 AND TIMESTAMPDIFF(HOUR, aam.punch_in, aam.punch_out) >= 4 THEN 'Half Day'
+            ELSE 'Absent'
+          END
+      END
+    ELSE 
+      CASE 
+        WHEN aam.leave_status = 2 THEN 'Leave'
+        WHEN aam.leave_status = 1 THEN 'Absent'
+        WHEN aam.status = 1 AND TIMESTAMPDIFF(HOUR, aam.punch_in, aam.punch_out) >= 8 THEN 'Present'
+        WHEN aam.status = 1 AND TIMESTAMPDIFF(HOUR, aam.punch_in, aam.punch_out) >= 4 THEN 'Half Day'
+        ELSE 'Absent'
+      END
+  END AS attendance_status,
+  
+  DATE_FORMAT(CONVERT_TZ(aam.punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
+  DATE_FORMAT(CONVERT_TZ(aam.punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
+
+  -- Self/Joint Calls & Orders, etc. (same as before, no change needed)
+  (
+    SELECT COUNT(DISTINCT act.outlet_id)
+    FROM romsondb.cor_outlet_activity_m act
+    WHERE DATE_FORMAT(act.enter_date, '%Y-%m-%d') = mtp.outlet_date 
+      AND act.enter_by = mtp.user_id
+      AND act.call_type = 'Self'
+  ) AS self_call_count,
+  
+  (
+    SELECT COUNT(DISTINCT act.outlet_id)
+    FROM romsondb.cor_outlet_activity_m act
+    WHERE DATE_FORMAT(act.enter_date, '%Y-%m-%d') = mtp.outlet_date 
+      AND act.enter_by = mtp.user_id
+      AND act.call_type = 'Joined'
+  ) AS joint_call_count,
+
+  (
+    SELECT COUNT(DISTINCT oc.outlet_id)
+    FROM romsondb.cor_order_m oc 
+    WHERE oc.order_date = mtp.outlet_date 
+      AND oc.enter_by = mtp.user_id 
+      AND oc.call_type = 'Self'
+  ) AS self_order_count,
+
+  (
+    SELECT COUNT(DISTINCT oc.outlet_id)
+    FROM romsondb.cor_order_m oc 
+    WHERE oc.order_date = mtp.outlet_date 
+      AND oc.enter_by = mtp.user_id 
+      AND oc.call_type = 'Joined'
+  ) AS joint_order_count,
+
+  (
+    SELECT COUNT(DISTINCT om.outlet_id)
+    FROM romsondb.cor_mtp_a bm
+    INNER JOIN romsondb.cor_outlet_m om ON om.beat_id = bm.beat_id
+    WHERE om.status = 'A'
+      AND om.deleted_at IS NULL
+      AND bm.user_id = mtp.user_id
+      AND bm.outlet_date = mtp.outlet_date
+  ) AS outlet_count,
+
+  (
+    SELECT COUNT(DISTINCT oa.outlet_id)
+    FROM romsondb.cor_outlet_activity_m oa 
+    WHERE DATE_FORMAT(oa.enter_date, '%Y-%m-%d') = mtp.outlet_date 
+      AND oa.enter_by = mtp.user_id
+  ) AS total_activity_covered_outlet,
+
+  (
+   SELECT COUNT(DISTINCT co.outlet_id)
+    FROM romsondb.cor_order_m co
+    WHERE DATE_FORMAT(co.order_time, '%Y-%m-%d') = mtp.outlet_date 
+      AND co.enter_by = mtp.user_id
+  ) AS total_order_covered_outlet,
+
+  (
+    SELECT COUNT(DISTINCT oa.outlet_id)
+    FROM romsondb.cor_outlet_activity_m oa 
+    WHERE DATE_FORMAT(oa.enter_date, '%Y-%m-%d') = mtp.outlet_date 
+      AND oa.enter_by = mtp.user_id
+  ) AS total_activities_count,
+
+
+  (
+    SELECT COUNT(DISTINCT oc.outlet_id)
+    FROM romsondb.cor_order_m oc 
+    WHERE oc.order_date = mtp.outlet_date 
+      AND oc.enter_by = mtp.user_id
+  ) AS order_count_total,
+
+  (
+    SELECT ROUND(SUM(od.order_amt), 2) 
+    FROM romsondb.cor_order_m om 
+    LEFT JOIN romsondb.cor_order_d od ON om.order_id = od.order_id 
+    WHERE om.order_date = mtp.outlet_date 
+      AND om.enter_by = mtp.user_id 
+  ) AS order_amt,
+
+  (
+    SELECT ROUND(SUM(od.item_qty), 2) 
+    FROM romsondb.cor_order_m om 
+    LEFT JOIN romsondb.cor_order_d od ON om.order_id = od.order_id 
+    WHERE om.order_date = mtp.outlet_date 
+      AND om.enter_by = mtp.user_id 
+  ) AS item_qty,
+
+    (
+    SELECT COUNT(*)
+    FROM romsondb.cor_task_m t
+    WHERE DATE_FORMAT(t.enter_date, '%Y-%m-%d') = mtp.outlet_date
+      AND t.enter_by = mtp.user_id
+  ) AS task_count,
+
+  bm.beat_name
+
+FROM cor_emp_m em
+LEFT JOIN cor_mtp_a mtp ON em.emp_id = mtp.user_id
+LEFT JOIN cor_beat_m bm ON mtp.beat_id = bm.beat_id
+LEFT JOIN cor_attendance_m aam ON em.emp_id = aam.emp_id AND mtp.outlet_date = aam.punch_date
+LEFT JOIN cor_division_m divm ON em.division = divm.division_id
+LEFT JOIN romsondb.cor_holiday_m h ON h.date = aam.punch_date AND FIND_IN_SET(em.state_id, h.state_id) > 0
+
+${whereClause}
+
+ORDER BY mtp.outlet_date ASC
+`;
+
+  // console.log("Executing Query:", query, "With params:", params);
+
+  sql.query(query, params, (err, resData) => {
+    if (err) {
+      // console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: resData });
+    }
+  });
+};
+
+////////////////////////CRM_Activity_report/////////////////////////
+
+attendance.CrmActivityReport = (req, result) => {
+  const { fromDate, toDate } = req.query;
+
+  const query = `
 SELECT 
-    e.emp_id,
-    TRIM(e.emp_code) AS emp_code,
-    e.user_name,
-    DATE_FORMAT(d.punch_date, '%d-%m-%Y') AS punch_date,
-    a.app_version,
-   DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
-      DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
-
-
-    CASE 
-        WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 
-            CONCAT(
-                FLOOR(TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out)/3600), ' hours ',
-                FLOOR((TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out) % 3600)/60), ' minutes'
-            )
-        ELSE '0 hours 0 minutes'
-    END AS total_hours,
-
-    CASE 
-        WHEN a.leave_status = 2 THEN 'L'
-        WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 'P'
-        ELSE 'A'
-    END AS attendance_status
-
-FROM 
-    romsondb.cor_emp_m e
-CROSS JOIN 
-    date_range d
-LEFT JOIN 
-    romsondb.cor_attendance_m a 
-    ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
-WHERE 
-    e.status = 'A'
-ORDER BY 
-    e.emp_code, d.punch_date;
+  CONCAT(e1.user_name, ' - ', a.enter_by) AS user_name,
+  CONCAT(a.outlet_id, ' - ', o.outlet_name) AS outlet,
+  CONCAT(a.hospital_customer_name, ' - ', a.user_type) AS customer,
+  s.sku_name AS sku_name,
+  a.remark AS remarks,
+  CONCAT(a.act_lat, ', ', a.act_long) AS lat_long,
+  a.follow_up AS follow_up,
+  CASE 
+    WHEN a.call_type = 'S' THEN 'Self'
+    WHEN a.call_type = 'J' THEN 'Joined'
+    ELSE a.call_type
+  END AS call_type,
+  a.joined_name AS joined_person_name,
+        DATE_FORMAT(a.activity_date, '%Y-%m-%d') AS activity_date
+FROM romsondb.cor_outlet_activity_m a
+LEFT JOIN romsondb.cor_emp_m e1 ON a.enter_by = e1.emp_id
+LEFT JOIN romsondb.cor_outlet_m o ON a.outlet_id = o.outlet_id
+LEFT JOIN romsondb.cor_sku_m s ON a.item_id = s.sku_id
+WHERE a.activity_date BETWEEN '${fromDate}' AND '${toDate}';
 
   `;
 
@@ -1849,6 +2642,122 @@ ORDER BY
     }
   });
 };
+
+///////////////////////regularization-report//////////////////////////
+
+attendance.RegularizationReport = (req, result) => {
+  const { fromDate, toDate, status } = req.query;
+
+  let query = `
+SELECT 
+    r.Regular_id,
+    r.enter_by,
+    TRIM(e.user_name) AS emp_name,
+    DATE_FORMAT(r.request_date, '%Y-%m-%d') AS requested_date,
+    DATE_FORMAT(COALESCE(r.punch_in, a.punch_in), '%Y-%m-%d %H:%i:%s') AS punch_in,
+    DATE_FORMAT(COALESCE(r.punch_out, a.punch_out), '%Y-%m-%d %H:%i:%s') AS punch_out,
+    r.Request_Remarks,
+    CASE 
+        WHEN r.status = 'P' THEN 'Pending'
+        WHEN r.status = 'A' THEN 'Accepted'
+        WHEN r.status = 'R' THEN 'Rejected'
+    END AS status,
+    CONCAT(IFNULL(r.Approved_ID, ''), ' - ', IFNULL(approver.user_name, '')) AS approved_by,
+    DATE_FORMAT(r.Approved_date, '%Y-%m-%d') AS approved_date
+FROM romsondb.cor_regulization_m r
+LEFT JOIN romsondb.cor_emp_m e 
+    ON r.enter_by = e.emp_id
+LEFT JOIN romsondb.cor_emp_m approver 
+    ON r.Approved_ID = approver.emp_id
+LEFT JOIN romsondb.cor_attendance_m a
+    ON r.enter_by = a.emp_id
+    AND r.request_date = a.punch_date
+WHERE r.request_date BETWEEN ? AND ?
+`;
+
+  const queryParams = [fromDate, toDate];
+
+  if (status && status !== "") {
+    query += ` AND (
+      (r.status = 'P' AND ? = 'Pending') OR
+      (r.status = 'A' AND ? = 'Accepted') OR
+      (r.status = 'R' AND ? = 'Rejected')
+    )`;
+    queryParams.push(status, status, status);
+  }
+
+  // query += ` ORDER BY r.request_date DESC`;
+
+  console.log("Executing Query:", query, "With Params:", queryParams);
+
+  sql.query(query, queryParams, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      return result({ error: true, data: "Something Went Wrong" });
+    }
+    return result({ error: false, data: res });
+  });
+};
+
+
+///////////////////////user-master-report///////////////////////////////
+// attendance.UserMasterReport
+/////////////////////////user-master-report-backup////////////////////////////////
+
+attendance.UserMasterReport = (req, result) => {
+  const statusFilter = (req.query.status || 'ALL').toUpperCase(); // from query
+  let query = `
+SELECT 
+    CASE WHEN e.status = 'A' THEN 'Active' ELSE 'Inactive' END AS 'Status',
+    e.emp_id AS 'emp_id',
+    e.user_name AS 'Name',
+    e.Head_Quater_name AS 'Head_Quater',
+    CONCAT(d.division_name, '-', e.division) AS 'Division',
+    CONCAT(z.zone_name, '-', e.zone_id) AS 'Zone_Name',
+    e.email AS 'Email',
+    e.phone_number AS 'Phone_No',
+    CONCAT(des.designation_name, '-', e.designation) AS 'Designation',
+    r.role_name AS 'Role',
+    CONCAT(dep.department_name, '-', e.department_id) AS 'Department',
+    CONCAT(mgr.user_name, ' - ', mgr.emp_id) AS 'Reporting_To',
+    dl.dealer_name AS 'Dealer',
+    CONCAT(e.city_id, '-', c.city_name) AS 'City',
+    e.emp_code AS 'EMP_Code',
+    c.city_type AS 'City_Type',
+    DATE_FORMAT(e.user_locked_date, '%d/%m/%Y') AS 'Joining_Date',
+    DATE_FORMAT(e.deleted_at, '%d/%m/%Y') AS 'Resign_Date'
+FROM romsondb.cor_emp_m e
+LEFT JOIN romsondb.cor_division_m d ON e.division = d.division_id
+LEFT JOIN romsondb.cor_zone_m z ON e.zone_id = z.zone_id
+LEFT JOIN romsondb.cor_role_m r ON e.role = r.role_id
+LEFT JOIN romsondb.cor_emp_m mgr ON e.reporting_to = mgr.emp_id
+LEFT JOIN romsondb.cor_dealer_m dl ON e.dealer_id = dl.dealer_id
+LEFT JOIN romsondb.cor_city_m c ON e.city_id = c.city_id
+LEFT JOIN romsondb.cor_designation_m des ON e.designation = des.designation_id
+LEFT JOIN romsondb.cor_department_m dep ON e.department_id = dep.department_id
+WHERE (
+    ? = 'ALL'
+    OR (? = 'ACTIVE' AND e.status = 'A')
+    OR (? = 'INACTIVE' AND e.status = 'I')
+)
+ORDER BY e.user_name;
+`;
+
+  let queryParams = [statusFilter, statusFilter, statusFilter];
+
+  sql.query(query, queryParams, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      return result({ error: true, data: "Something Went Wrong" });
+    }
+    return result({ error: false, data: res });
+  });
+};
+
+
+
+
+
 
 
 

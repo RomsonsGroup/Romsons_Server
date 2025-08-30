@@ -21,7 +21,15 @@ module.exports = app => {
     router.get("/leave_type", Attendance.LeaveType);
     router.post("/HolidayList", Attendance.HolidayList);
     router.get("/leave_history", Attendance.leave_history);
+    router.get("/outletReport", Attendance.outletReport);
+    router.get("/UserList", Attendance.UserList);
+    router.get("/Zonelist", Attendance.Zonelist);
+    router.get("/Divisionlist", Attendance.Divisionlist);
+    router.get("/PerformanceSummary", Attendance.PerformanceSummary);
     router.post("/leaveReportSummary", Attendance.leaveReportSummary);
+    router.get("/CrmActivityReport", Attendance.CrmActivityReport);
+    router.get("/RegularizationReport", Attendance.RegularizationReport);
+    router.get("/UserMasterReport", Attendance.UserMasterReport);
    
     app.use('/', router);
   };

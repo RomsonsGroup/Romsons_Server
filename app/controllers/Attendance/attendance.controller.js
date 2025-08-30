@@ -148,7 +148,52 @@ exports.ValidationAttendance = (req, res) => {
     attendancemodel.leaveReportSummary(req,(data) => {
       res.send(data);
     });
-  
-  
   };
   
+  exports.UserList = (req, res) => {
+    attendancemodel.UserList(req,(data) => {
+      res.send(data);
+    });
+  };
+
+  exports.outletReport = (req, res) => {
+    attendancemodel.outletReport(req,(data) => {
+      res.send(data);
+    });
+  };
+
+  exports.Zonelist = (req, res) => {
+    attendancemodel.Zonelist(req,(data) => {
+      res.send(data);
+    });
+  };
+
+  exports.Divisionlist = (req, res) => {
+    attendancemodel.Divisionlist(req,(data) => {
+      res.send(data);
+    });
+  };
+
+  exports.PerformanceSummary = (req, res) => {
+    attendancemodel.PerformanceSummary(req,(data) => {
+      res.send(data);
+    });
+  };
+
+  exports.CrmActivityReport = (req, res) => {
+    attendancemodel.CrmActivityReport(req,(data) => {
+      res.send(data);
+    });
+  };
+
+  exports.RegularizationReport = (req, res) => {
+    attendancemodel.RegularizationReport(req,(data) => {
+      res.send(data);
+    });
+  };
+
+  exports.UserMasterReport = (req, res) => {
+    attendancemodel.UserMasterReport(req,(data) => {
+      res.send(data);
+    });
+  };

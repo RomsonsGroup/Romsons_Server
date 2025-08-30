@@ -181,7 +181,7 @@ and bm.user_id = '${req.body.enterBy}' and om.status = 'A')beat_count,
 
 
   dashboard.AppVersionCheck =  (req, result) => {
-    sql.query(`SELECT version FROM app_versions ORDER BY id `,
+    sql.query(`SELECT version,version_ios FROM app_versions ORDER BY id `,
     console.log(`SELECT version FROM app_versions ORDER BY id `), (err, res) => {
     
       console.log("osbss: ", res);

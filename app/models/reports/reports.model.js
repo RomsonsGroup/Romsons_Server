@@ -436,7 +436,7 @@ reports.getOrdersAndActivitiesByDate = (req, result) => {
 //getting address by using lat log
 const getAddress = async (lat, long) => {
   try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${long}&key=AIzaSyC4cMHPr8PdH18gyzIJ6YMlTJSHEDGwvNM`;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${long}&key=AIzaSyBD_oiY_TqpxQCYs_LtydY-bcPPlxig6iM`;
     const response = await fetch(url);
     const data = await response.json();
 
@@ -1239,12 +1239,12 @@ reports.getAttendanceHistory = (req, result) => {
 
 
 // reports.Leaveidapproval = (req, result) => {
-  
+
 //   const { leaveIds, empidd } = req.body;
 //   console.log(leaveIds,"testS");
 
 
-  
+
 //   const query = `
 //     UPDATE crm_dev_db.cor_leave_m 
 //     SET approved_by = ?, approved_date = NOW() 
@@ -1817,16 +1817,15 @@ WHERE emp_id = ? AND punch_date = ? AND punch_out IS NULL
                 const updateAttendanceQuery = `
                   UPDATE crm_dev_db.cor_attendance_m 
   SET 
+  punch_in = CONCAT(DATE(?), ' ', TIME(?)),
     punch_out = CONCAT(DATE(?), ' ', TIME(?)) 
-  WHERE emp_id = ?
+  WHERE emp_id = ? and punch_date = ? 
 `;
                 // console.log(Requested_date, start_time,  empidd, Requested_date, "Line 1365");
 
                 sql.query(updateAttendanceQuery,
-                  [Requested_date, end_time, team_empid]
+                  [Requested_date, start_time,Requested_date, end_time, team_empid, Requested_date]
                   ,
-
-
                   (err, updateRes) => {
                     if (err) {
                       console.error("Update Attendance Error:", err);
