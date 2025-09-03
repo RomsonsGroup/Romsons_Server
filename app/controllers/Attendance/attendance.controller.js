@@ -197,3 +197,10 @@ exports.ValidationAttendance = (req, res) => {
       res.send(data);
     });
   };
+
+
+  exports.ManuallyInsertAttendance = (req, res) => {
+    attendancemodel.ManuallyInsertAttendance(req,(data) => {
+      res.send(data);
+    });
+  };

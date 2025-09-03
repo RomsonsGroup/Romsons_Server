@@ -30,6 +30,8 @@ module.exports = app => {
     router.get("/CrmActivityReport", Attendance.CrmActivityReport);
     router.get("/RegularizationReport", Attendance.RegularizationReport);
     router.get("/UserMasterReport", Attendance.UserMasterReport);
+    router.post("/ManuallyInsertAttendance", Attendance.ManuallyInsertAttendance);
+
    
     app.use('/', router);
   };

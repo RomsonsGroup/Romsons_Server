@@ -70,12 +70,13 @@ ORDER BY outlet_date ASC;`,
 // };
 
 outlet.DatewiseOutlet_data = (req, result) => {
-  let outletDate = req.body.outletdate;
+  let outletDate = req.body.outletDate;
   if (!outletDate) {
     const currentDate = new Date();
     const formattedDate = currentDate.toISOString().split('T')[0]; // Format date as 'YYYY-MM-DD'
     outletDate = formattedDate; // Use current date if outletdate is not provided
   }
+console.log(outletDate,'poojaaa');
 
   sql.query(
     `
@@ -117,17 +118,17 @@ outlet.DatewiseOutlet_data = (req, result) => {
         ELSE NULL 
     END AS activity_status
 FROM 
-    crm_dev_db.cor_mtp_a AS m
+    romsondb.cor_mtp_a AS m
 LEFT JOIN 
-    crm_dev_db.cor_outlet_m AS o ON m.beat_id = o.beat_id
+    romsondb.cor_outlet_m AS o ON m.beat_id = o.beat_id
 LEFT JOIN 
-    crm_dev_db.cor_outlet_category_m AS co ON o.outlet_category_id = co.outlet_category_id
+    romsondb.cor_outlet_category_m AS co ON o.outlet_category_id = co.outlet_category_id
 LEFT JOIN 
-    crm_dev_db.cor_emp_m AS emp ON emp.emp_id = m.user_id
+    romsondb.cor_emp_m AS emp ON emp.emp_id = m.user_id
 LEFT JOIN 
-    crm_dev_db.cor_order_m AS ord ON ord.outlet_id = o.outlet_id AND ord.order_date = m.outlet_date
+    romsondb.cor_order_m AS ord ON ord.outlet_id = o.outlet_id AND ord.order_date = m.outlet_date
 LEFT JOIN 
-    crm_dev_db.cor_outlet_activity_m AS act ON act.outlet_id = o.outlet_id AND act.activity_date = m.outlet_date
+    romsondb.cor_outlet_activity_m AS act ON act.outlet_id = o.outlet_id AND act.activity_date = m.outlet_date
 WHERE 
     m.user_id =  '${req.body.empid}' 
     AND m.outlet_date = '${outletDate}' 
@@ -138,7 +139,7 @@ ORDER BY
     o.outlet_name;
     `,
     (err, res) => {
-      console.log("Query Result: ", res);
+      // console.log("Query Result: ", res);
       if (err) {
         return result({ error: true, data: "Something Went Wrong" });
       }
@@ -329,7 +330,7 @@ WHERE
 
 
 outlet.countOutlet = (req, result) => {
-  let outletDate = req.body.outletdate;
+  let outletDate = req.body.outletDate;
   if (!outletDate) {
     const currentDate = new Date();
     const formattedDate = currentDate.toISOString().split('T')[0]; // Format date as 'YYYY-MM-DD'
@@ -340,11 +341,11 @@ outlet.countOutlet = (req, result) => {
     COUNT(*) AS Totaloutlet, 
     bm.beat_name, 
     m.min_outlet_coverage
-FROM crm_dev_db.cor_mtp_a AS m
-LEFT JOIN crm_dev_db.cor_outlet_m AS o ON m.beat_id = o.beat_id
-LEFT JOIN crm_dev_db.cor_customer_type_m AS c ON o.customer_type_id = c.customer_type_id
-LEFT JOIN crm_dev_db.cor_outlet_category_m AS co ON o.outlet_category_id = co.outlet_category_id
-LEFT JOIN crm_dev_db.cor_beat_m AS bm ON o.beat_id = bm.beat_id
+FROM romsondb.cor_mtp_a AS m
+LEFT JOIN romsondb.cor_outlet_m AS o ON m.beat_id = o.beat_id
+LEFT JOIN romsondb.cor_customer_type_m AS c ON o.customer_type_id = c.customer_type_id
+LEFT JOIN romsondb.cor_outlet_category_m AS co ON o.outlet_category_id = co.outlet_category_id
+LEFT JOIN romsondb.cor_beat_m AS bm ON o.beat_id = bm.beat_id
 WHERE m.user_id =  '${req.body.empid}' 
   AND m.outlet_date = '${outletDate}' 
   AND o.status = "A"

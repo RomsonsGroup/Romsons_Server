@@ -1287,54 +1287,54 @@ attendance.attandance_count = (req, result) => {
       }
 
       const convertedResults = res
-  .filter(record => !['11000011', '11000010'].includes(String(record.emp_id)))
-  .map(record => {
-    if (record.punch_in_time !== '00:00:00') {
-      record.punch_in_time = moment
-        .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
-        .tz('Asia/Kolkata')
-        .format('h:mm A');
-    }
+        .filter(record => !['11000011', '11000010', '11000102'].includes(String(record.emp_id)))
+        .map(record => {
+          if (record.punch_in_time !== '00:00:00') {
+            record.punch_in_time = moment
+              .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
+              .tz('Asia/Kolkata')
+              .format('h:mm A');
+          }
 
-    if (record.punch_out_time !== '00:00:00') {
-      record.punch_out_time = moment
-        .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
-        .tz('Asia/Kolkata')
-        .format('h:mm A');
-    }
+          if (record.punch_out_time !== '00:00:00') {
+            record.punch_out_time = moment
+              .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
+              .tz('Asia/Kolkata')
+              .format('h:mm A');
+          }
 
-    // Format total_hours as HH:MM
-    if (
-      record.punch_in_time !== '00:00:00' &&
-      record.punch_out_time !== '00:00:00'
-    ) {
-      const punchInMoment = moment(record.punch_in_time, 'h:mm A');
-      const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
+          // Format total_hours as HH:MM
+          if (
+            record.punch_in_time !== '00:00:00' &&
+            record.punch_out_time !== '00:00:00'
+          ) {
+            const punchInMoment = moment(record.punch_in_time, 'h:mm A');
+            const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
 
-      const duration = moment.duration(punchOutMoment.diff(punchInMoment));
-      const totalHours = Math.floor(duration.asHours());
-      const totalMinutes = duration.minutes();
+            const duration = moment.duration(punchOutMoment.diff(punchInMoment));
+            const totalHours = Math.floor(duration.asHours());
+            const totalMinutes = duration.minutes();
 
-      record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
-        .toString()
-        .padStart(2, '0')}`;
-    } else {
-      record.total_hours = '00:00';
-    }
+            record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
+              .toString()
+              .padStart(2, '0')}`;
+          } else {
+            record.total_hours = '00:00';
+          }
 
-    // Generate fake attendance_id if null
-    if (!record.attendance_id) {
-      const fixedPrefix = '100';
-      const uniqueKey = `${record.emp_id}-${record.punch_date}`;
-      const hash = crypto.createHash('sha256')
-        .update(uniqueKey)
-        .digest('hex');
-      const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
-      record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
-    }
+          // Generate fake attendance_id if null
+          if (!record.attendance_id) {
+            const fixedPrefix = '100';
+            const uniqueKey = `${record.emp_id}-${record.punch_date}`;
+            const hash = crypto.createHash('sha256')
+              .update(uniqueKey)
+              .digest('hex');
+            const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
+            record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
+          }
 
-    return record;
-  });
+          return record;
+        });
 
 
       result({ error: false, data: convertedResults });
@@ -1385,10 +1385,11 @@ SELECT
     WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND MAX(h.date) IS NULL AND MAX(a.punch_in) IS NULL AND MAX(a.punch_out) IS NULL THEN 'WEO'
     WHEN DAYOFWEEK(d.punch_date) = 1 AND MAX(a.punch_in) IS NULL AND MAX(a.punch_out) IS NULL THEN 'WEO'
     WHEN MAX(a.punch_in) IS NULL AND MAX(a.punch_out) IS NULL AND d.punch_date <= CURRENT_DATE() THEN 'A'
-        WHEN a.punch_in IS NOT NULL AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) > '10:30:00' THEN 'ABSHD'
+        WHEN a.punch_in IS NOT NULL 
+         AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) >= '10:31:00' THEN 'ABSHD'
 
         WHEN MAX(a.status) = 1 AND MAX(a.punch_in) IS NOT NULL AND MAX(a.punch_out) IS NOT NULL THEN 'P'
-     WHEN a.punch_in IS NOT NULL AND a.punch_out IS NULL AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) <= '10:30:00' THEN 'P'
+     WHEN a.punch_in IS NOT NULL AND a.punch_out IS NULL AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) <= '10:30:59' THEN 'P'
 
     WHEN d.punch_date > CURRENT_DATE() THEN ''
     ELSE 'A'
@@ -2048,7 +2049,7 @@ attendance.DayWiseAttendanceReport = (req, result) => {
   const { fromDate, toDate } = req.query;
 
   const query = `
- WITH RECURSIVE date_range AS (
+WITH RECURSIVE date_range AS (
     SELECT DATE('${fromDate}') AS punch_date
     UNION ALL
     SELECT DATE_ADD(punch_date, INTERVAL 1 DAY)
@@ -2062,10 +2063,22 @@ attendance_data AS (
         e.user_name,
         DATE_FORMAT(d.punch_date, '%d-%m-%Y') AS punch_date,
         a.app_version,
-        DATE_FORMAT(CONVERT_TZ(a.punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
-        DATE_FORMAT(CONVERT_TZ(a.punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
 
+        -- ✅ Updated punch_in_time
         CASE 
+            WHEN (a.leave_status = 2 OR l.status = 1) THEN '' 
+            ELSE DATE_FORMAT(CONVERT_TZ(a.punch_in, '+00:00', '+05:30'), '%h:%i %p')
+        END AS punch_in_time,
+
+        -- ✅ Updated punch_out_time
+        CASE 
+            WHEN (a.leave_status = 2 OR l.status = 1) THEN '' 
+            ELSE DATE_FORMAT(CONVERT_TZ(a.punch_out, '+00:00', '+05:30'), '%h:%i %p')
+        END AS punch_out_time,
+
+        -- ✅ Updated total_hours
+        CASE 
+            WHEN (a.leave_status = 2 OR l.status = 1) THEN '0 hours 0 minutes'
             WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 
                 CONCAT(
                     FLOOR(TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out)/3600), ' hours ',
@@ -2074,24 +2087,30 @@ attendance_data AS (
             ELSE '0 hours 0 minutes'
         END AS total_hours,
 
+        -- ✅ Attendance status remains same
         CASE 
-    WHEN a.leave_status = 2 THEN 'L'
-    WHEN l.status = 1 THEN 'PL'
-    WHEN d.punch_date > CURRENT_DATE() THEN ''
-    WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
-    WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
-    WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
-    WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A'
-    -- Late punch_in, ABSHD, chahe punch_out ho ya na ho
-    WHEN a.punch_in IS NOT NULL AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) > '10:30:00' THEN 'ABSHD'
-    -- Full presence
-    WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 'P'
-    -- Early punch_in without punch_out
-    WHEN a.punch_in IS NOT NULL AND (a.punch_out IS NULL OR a.punch_out = '0000-00-00 00:00:00')
-         AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) <= '10:30:00' THEN 'P'
-    ELSE 'A'
-END AS attendance_status,
+            WHEN a.leave_status = 2 THEN 'L'
+            WHEN l.status = 1 THEN 'PL'
+            WHEN d.punch_date > CURRENT_DATE() THEN ''
+            WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
+            WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+            WHEN DAYOFWEEK(d.punch_date) = 1 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+            WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'A'
 
+            -- Late punch_in: ABSHD (10:31:00 se aage)
+            WHEN a.punch_in IS NOT NULL 
+                 AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) >= '10:31:00' THEN 'ABSHD'
+
+            -- Full presence
+            WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 'P'
+
+            -- Early punch_in without punch_out (10:30:59 tak P)
+            WHEN a.punch_in IS NOT NULL 
+                 AND (a.punch_out IS NULL OR a.punch_out = '0000-00-00 00:00:00')
+                 AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) <= '10:30:59' THEN 'P'
+
+            ELSE 'A'
+        END AS attendance_status,
 
         CASE 
             WHEN a.leave_status = 2 THEN a.leave_type
@@ -2140,76 +2159,6 @@ ORDER BY emp_code, punch_date;
     }
   });
 };
-
-
-// attendance.DayWiseAttendanceReport = (req, result) => {
-//   const { fromDate, toDate } = req.query;
-
-//   const query = `
-//     WITH RECURSIVE date_range AS (
-//       SELECT DATE('${fromDate}') AS punch_date
-//       UNION ALL
-//       SELECT DATE_ADD(punch_date, INTERVAL 1 DAY)
-//       FROM date_range
-//       WHERE punch_date < '${toDate}'
-//     )
-
-//     SELECT 
-//         e.emp_id,
-//         TRIM(e.emp_code) AS emp_code,
-//         e.user_name,
-//         DATE_FORMAT(d.punch_date, '%d-%m-%Y') AS punch_date,
-//         a.app_version,
-//         DATE_FORMAT(CONVERT_TZ(punch_in, '+00:00', '+05:30'), '%h:%i %p') AS punch_in_time,
-//         DATE_FORMAT(CONVERT_TZ(punch_out, '+00:00', '+05:30'), '%h:%i %p') AS punch_out_time,
-
-//         CASE 
-//             WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 
-//                 CONCAT(
-//                     FLOOR(TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out)/3600), ' hours ',
-//                     FLOOR((TIMESTAMPDIFF(SECOND, a.punch_in, a.punch_out) % 3600)/60), ' minutes'
-//                 )
-//             ELSE '0 hours 0 minutes'
-//         END AS total_hours,
-
-//         CASE 
-//             WHEN a.leave_status = 2 THEN 'L'
-//             WHEN a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL THEN 'P'
-//             ELSE 'A'
-//         END AS attendance_status,
-
-//         CASE 
-//             WHEN a.leave_status = 2 THEN a.leave_type
-//             ELSE '0'
-//         END AS leave_type
-
-//     FROM 
-//         romsondb.cor_emp_m e
-//     CROSS JOIN 
-//         date_range d
-//     LEFT JOIN 
-//         romsondb.cor_attendance_m a 
-//         ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
-//     WHERE 
-//         -- e.status = 'A' -- 👈❌ Temporarily removed this filter
-//         MONTH(d.punch_date) = MONTH('${fromDate}')
-//         AND YEAR(d.punch_date) = YEAR('${fromDate}')
-//     ORDER BY 
-//         e.emp_code, d.punch_date;
-//   `;
-
-//   console.log("Executing Query:", query);
-
-//   sql.query(query, (err, res) => {
-//     if (err) {
-//       console.error("Query Error:", err);
-//       result({ error: true, data: "Something Went Wrong" });
-//     } else {
-//       result({ error: false, data: res });
-//     }
-//   });
-// };
-
 
 
 ///////////////////////crm_tracker_report/////////////////
@@ -2756,7 +2705,82 @@ ORDER BY e.user_name;
 
 
 
+///////////////////////manually_attendance_insert//////////////////////////
 
+attendance.ManuallyInsertAttendance = (req, result) => {
+  const {
+    emp_id,
+    out_lat,
+    out_long,
+    out_remark,
+    out_address,
+    in_lat,
+    in_lng,
+    enter_by,
+    in_remark,
+    work_place,
+    in_address,
+    app_version,
+    punch_date,
+    punch_in,
+    punch_out,
+    enter_date
+  } = req.body;
+
+  const query = `
+    INSERT INTO romsondb.cor_attendance_m (
+      attendance_id,
+      emp_id,
+      shift,
+      punch_date,
+      punch_in,
+      punch_out,
+      out_lat,
+      out_long,
+      out_remark,
+      out_address,
+      in_lat,
+      in_lng,
+      enter_by,
+      enter_date,
+      in_remark,
+      work_place,
+      in_address,
+      app_version
+    ) VALUES (
+      romsondb.all_auto_no(55),
+      ?, 'D', ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    )
+  `;
+
+  const params = [
+    emp_id,
+    punch_date,
+    punch_in,
+    punch_out,
+    out_lat,
+    out_long,
+    out_remark,
+    out_address,
+    in_lat,
+    in_lng,
+    enter_by,
+    enter_date,
+    in_remark,
+    work_place,
+    in_address,
+    app_version
+  ];
+
+  sql.query(query, params, (err, res) => {
+    if (err) {
+      console.error("DB Error: ", err);
+      return result({ error: true, data: "Something Went Wrong" });
+    }
+    result({ error: false, data: res });
+  });
+};
 
 
 
