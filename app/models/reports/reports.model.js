@@ -1,5 +1,7 @@
 
 const sql = require("../db.js");
+const moment = require('moment-timezone');
+
 
 // const path = require('path');
 // const getAddress = require('./getAddress');
@@ -25,7 +27,7 @@ const reports = function (osbs) {
 //////order
 
 reports.SelectedBeat = (req, result) => {
-  sql.query(`SELECT beat_id,beat_name FROM crm_dev_db.cor_beat_m where beat_assigning_form_id = '${req.body.empID}' order by beat_name`, (err, res) => {
+  sql.query(`SELECT beat_id,beat_name FROM romsondb.cor_beat_m where beat_assigning_form_id = '${req.body.empID}'and status = 'A' order by beat_name`, (err, res) => {
     console.log("osbss: ", res);
     if (err) {
       result({ data: "Something Went Wrong" })
@@ -47,13 +49,16 @@ reports.SelectOutlet_OrderHistory = (req, result) => {
 
 reports.ManagerTeam = (req, result) => {
   sql.query(`SELECT 
-    emp_id,
-    user_name AS reporting_person_name
+    e.emp_id,
+    CONCAT(e.user_name, ' - ', d.division_name) AS reporting_person_name
 FROM 
-    crm_dev_db.cor_emp_m
+    romsondb.cor_emp_m e
+JOIN 
+    romsondb.cor_division_m d 
+    ON e.division = d.division_id   -- ✅ yaha correct FK/PK relation use karo
 WHERE 
-    reporting_to = '${req.body.enterBy}' 
-    AND status = 'A' `, (err, res) => {
+    e.reporting_to = '${req.body.enterBy}'
+    AND e.status = 'A'; `, (err, res) => {
     console.log("osbss: ", res);
     if (err) {
       result({ error: true, data: "Something Went Wrong" })
@@ -737,7 +742,7 @@ reports.AttendanceHistory = (req, result) => {
 };
 
 
-
+/////////////////report-backup-monthyattendance- 05-09-2025///////////////////
 reports.monthlyAttendance = (req, result) => {
   sql.query(`SELECT 
     IFNULL(a.attendance_id, NULL) AS attendance_id,
@@ -843,10 +848,6 @@ ORDER BY
 };
 
 
-
-
-
-
 /////EOD
 
 // reports.EodDate =  (req, result) => {
@@ -912,7 +913,7 @@ reports.EodOrderbutton = (req, result) => {
   sql.query(`select m.order_id as m_orderID,m.order_date,m.outlet_id,m.phone_no,m.employee_id,m.total_quantity,m.scheme_discount,m.call_type,m.joined_name,
     m.discount_amount,m.enter_by ,d.item_id,d.item_qty,d.item_price_unit,d.item_value,d.item_gst,d.order_amt,
     d.order_gst_amt,itm.sku_name,itm.segment_id,outlet.outlet_name
-     FROM crm_dev_db.cor_order_m m,crm_dev_db.cor_order_d d , crm_dev_db.cor_sku_m itm ,crm_dev_db.cor_outlet_m outlet
+     FROM romsondb.cor_order_m m,romsondb.cor_order_d d , romsondb.cor_sku_m itm ,romsondb.cor_outlet_m outlet
      WHERE m.order_id=d.order_id and m.outlet_id=outlet.outlet_id and  d.item_id=itm.sku_id and m.order_date = '${req.body.enterDate}'  and m.enter_by = '${req.body.enterBy}'`, (err, res) => {
     console.log("osbss: ", res);
     if (err) {
@@ -970,7 +971,7 @@ reports.EodReturnbutton = (req, result) => {
   sql.query(`select m.order_return_id as m_return_orderID,m.order_return__date,m.outlet_id,m.phone_no,m.employee_id,m.total_quantity,m.scheme_discount,
     m.discount_amount,m.enter_by ,d.item_id,d.item_qty,d.item_price_unit,d.item_value,d.item_gst,d.return_order_amt,d.order_return_reason,
     d.return_order_gst_amt,itm.sku_name,itm.segment_id,outlet.outlet_name
-     FROM crm_dev_db.cor_order_return_m m,crm_dev_db.cor_order_return_d d , crm_dev_db.cor_sku_m itm ,crm_dev_db.cor_outlet_m outlet
+     FROM romsondb.cor_order_return_m m,romsondb.cor_order_return_d d , romsondb.cor_sku_m itm ,romsondb.cor_outlet_m outlet
      WHERE m.order_return_id=d.order_return_id and m.outlet_id=outlet.outlet_id and  d.item_id=itm.sku_id and m.order_return__date = '${req.body.enterDate}' and m.enter_by = '${req.body.enterBy}'`, (err, res) => {
     console.log("osbss: ", res);
     if (err) {
@@ -1008,7 +1009,7 @@ reports.ActivityData = (req, result) => {
 reports.ActivityDatabutton = (req, result) => {
   sql.query(`SELECT act.id,act.outlet_id,act.item_id,act.enter_by,act.user_type,act.remark,act.call_type, act.joined_name,
 act.follow_up,act.enter_date,act.hospital_customer_name,act.hospital_name,act.activity_date,act.zone_id,act.division_m,itm.sku_name
-     FROM crm_dev_db.cor_outlet_activity_m act , crm_dev_db.cor_sku_m itm  where act.item_id=itm.sku_id and act.activity_date = '${req.body.enterDate}' and act.enter_by = '${req.body.enterBy}'`, (err, res) => {
+     FROM romsondb.cor_outlet_activity_m act , romsondb.cor_sku_m itm  where act.item_id=itm.sku_id and act.activity_date = '${req.body.enterDate}' and act.enter_by = '${req.body.enterBy}'`, (err, res) => {
     console.log("osbss: ", res);
     if (err) {
       result({ error: true, data: "Something Went Wrong" })
@@ -1016,6 +1017,33 @@ act.follow_up,act.enter_date,act.hospital_customer_name,act.hospital_name,act.ac
     result({ error: false, data: res })
   });
 };
+
+//////////////////////new 05-09-2025///////////////////////////
+reports.TaskShowDaysummary = (req, result) => {
+  sql.query(`
+    SELECT 
+      task.task_name,
+      task.status,
+      task.remarks,
+      task.joint_id,
+      task.joint_name,
+      task.priority,
+      DATE_FORMAT(task.follow_up, '%d/%m/%Y') AS follow_up,
+      task.enter_by,
+      DATE_FORMAT(task.modify_date, '%d/%m/%Y') AS modify_date
+    FROM romsondb.cor_task_m task
+    WHERE DATE(task.enter_date) = '${req.body.enterDate}' 
+      AND task.enter_by = '${req.body.enterBy}';
+  `, (err, res) => {
+    console.log("osbss: ", res);
+    if (err) {
+      result({ error: true, data: "Something Went Wrong" })
+    } else {
+      result({ error: false, data: res })
+    }
+  });
+};
+
 
 // reports.EODActivityDate =  (req, result) => {
 //   sql.query( `SELECT distinct m.outlet_id,m.item_id,m.enter_by,m.user_type,m.remark,m.follow_up,m.activity_date,m.enter_date,m.hospital_customer_name,m.hospital_name,outlet.outlet_name
@@ -1473,7 +1501,7 @@ WHERE
 
 // show punch in puch out send date
 reports.EODAttendancebutton = (req, result) => {
-  sql.query(`SELECT punch_in , punch_out FROM crm_dev_db.cor_attendance_m where punch_date = '${req.body.enterDate}' and emp_id='${req.body.enterBy}'`, console.log(`SELECT punch_in , punch_out FROM crm_dev_db.cor_attendance_m where punch_date = '${req.body.enterDate}' and emp_id='${req.body.enterBy}'`), (err, res) => {
+  sql.query(`SELECT punch_in , punch_out FROM romsondb.cor_attendance_m where punch_date = '${req.body.enterDate}' and emp_id='${req.body.enterBy}'`, console.log(`SELECT punch_in , punch_out FROM romsondb.cor_attendance_m where punch_date = '${req.body.enterDate}' and emp_id='${req.body.enterBy}'`), (err, res) => {
     console.log("osbss: ", res);
     if (err) {
       result({ error: true, data: "Something Went Wrong" })
@@ -1824,7 +1852,7 @@ WHERE emp_id = ? AND punch_date = ? AND punch_out IS NULL
                 // console.log(Requested_date, start_time,  empidd, Requested_date, "Line 1365");
 
                 sql.query(updateAttendanceQuery,
-                  [Requested_date, start_time,Requested_date, end_time, team_empid, Requested_date]
+                  [Requested_date, start_time, Requested_date, end_time, team_empid, Requested_date]
                   ,
                   (err, updateRes) => {
                     if (err) {
@@ -2008,6 +2036,303 @@ reports.getPendingRegularizationCount = (req, result) => {
 };
 
 
+///////////////////////////MTP-MODULE-API/////////////////////////////////
+
+reports.MtpTourPlanBeat = (req, result) => {
+  const empidd = req.query.empidd;
+  const query = `
+    SELECT beat_id, beat_name, beat_assigning_form_id 
+    FROM romsondb.cor_beat_m 
+    WHERE beat_assigning_form_id = '${empidd}' AND status = 'A'`;
+
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+const getEmployeeStateId = (user_id) => {
+  return new Promise((resolve, reject) => {
+    const query = `SELECT state_id FROM crm_dev_db.cor_emp_m WHERE emp_id = ?`;
+    sql.query(query, [user_id], (err, res) => {
+      if (err) return reject("Cannot fetch state_id");
+      resolve(res[0]?.state_id);
+    });
+  });
+};
+
+const handleMtpValitionWeekOff = (todayDay, employee_state_id, user_id) => {
+  if ((employee_state_id == 39 && todayDay === "Saturday") || (employee_state_id != 39 && todayDay === "Sunday")) {
+    return { error: true, msg: `Today is week off for user ${user_id}` };
+  }
+  return { error: false, msg: "Validation passed for week off" };
+};
+
+
+const handleMtpValitionHoliday = (employee_state_id, outlet_date) => {
+  return new Promise((resolve, reject) => {
+    const holiday_checker = `SELECT * FROM crm_dev_db.cor_holiday_m WHERE state_id = ? AND date = ?`;
+    sql.query(holiday_checker, [employee_state_id, outlet_date], (err, res) => {
+      if (err) return reject({ error: true, msg: "Holiday table fetch failed" });
+      if (res.length > 0) return resolve({ error: true, msg: "Today is a holiday" });
+      resolve({ error: false, msg: "Validation passed for holiday" });
+    });
+  });
+};
+
+const handleMtpValitionLeave = (emp_id, outlet_date) => {
+  return new Promise((resolve, reject) => {
+    const leave_checker = `
+      SELECT * FROM crm_dev_db.cor_leave_m 
+      WHERE emp_id = ? AND ? BETWEEN start_date AND end_date
+    `;
+    sql.query(leave_checker, [emp_id, outlet_date], (err, res) => {
+      if (err) return reject({ error: true, msg: "Leave table fetch failed" });
+      if (res.length > 0) return resolve({ error: true, msg: `Today is applied leave for emp ${emp_id}` });
+      resolve({ error: false, msg: "Validation passed for leave" });
+    });
+  });
+};
+
+reports.InsertMtpTourPlan = async (req, result) => {
+  try {
+    const outlet_date = req.body.outlet_date;
+    const todayDay = moment(outlet_date).format("dddd");
+    const employee_state_id = await getEmployeeStateId(req.body.user_id);
+
+    // ✅ Validation Checks
+    const { error: weekOffError, msg: weekOffMsg } = handleMtpValitionWeekOff(
+      todayDay,
+      employee_state_id,
+      req.body.user_id
+    );
+    if (weekOffError) return result({ error: true, message: weekOffMsg });
+
+    const { error: holidayError, msg: holidayMsg } = await handleMtpValitionHoliday(
+      employee_state_id,
+      outlet_date
+    );
+    if (holidayError) return result({ error: true, message: holidayMsg });
+
+    const { error: leaveError, msg: leaveMsg } = await handleMtpValitionLeave(
+      req.body.user_id,
+      outlet_date
+    );
+    if (leaveError) return result({ error: true, message: leaveMsg });
+
+    // ✅ Extract Payload
+    const { id, user_id, beat_id, status, plan_type, joint_id, comments } = req.body;
+
+    // ✅ If ID present → UPDATE, else → INSERT
+    if (id) {
+      const updateQuery = `
+        UPDATE crm_dev_db.cor_mtp_a
+        SET beat_id = ?, outlet_date = ?, status = ?, plan_type = ?, joint_id = ?, comments = ?
+        WHERE id = ? AND user_id = ?;
+      `;
+      const updateValues = [
+        beat_id, outlet_date, status, plan_type, joint_id, comments, id, user_id,
+      ];
+
+      sql.query(updateQuery, updateValues, (err, res) => {
+        if (err) {
+          console.error("Update Error:", err);
+          return result({ error: true, message: "Failed to update MTP Tour Plan" });
+        }
+        result({ error: false, message: "MTP Tour Plan updated successfully", updatedId: id });
+      });
+    } else {
+      const insertQuery = `
+        INSERT INTO crm_dev_db.cor_mtp_a 
+        (user_id, beat_id, outlet_date, enter_by, enter_date, status, plan_type, joint_id, comments)
+        VALUES (?, ?, ?, 1, NOW(), ?, ?, ?, ?);
+      `;
+      const insertValues = [user_id, beat_id, outlet_date, status, plan_type, joint_id, comments];
+
+      sql.query(insertQuery, insertValues, (err, res) => {
+        if (err) {
+          console.error("Insert Error:", err);
+          return result({ error: true, message: "Something Went Wrong" });
+        }
+        result({ error: false, message: "MTP Tour Plan inserted successfully", insertedId: res.insertId });
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    result({ error: true, message: "Unexpected Error" });
+  }
+};
+
+reports.GetMtpTourPlan = (req, result) => {
+  const { empidd, month, year } = req.query;
+
+  const query = `
+    SELECT 
+  a.id,
+  a.user_id,
+  a.beat_id,
+  b.beat_name,
+  DATE_FORMAT(a.outlet_date, '%Y-%m-%d') AS outlet_date,
+  a.status,
+  a.plan_type,
+  a.joint_id,
+  c.user_name AS joint_name, -- ✅ added
+  a.comments
+FROM crm_dev_db.cor_mtp_a AS a
+LEFT JOIN crm_dev_db.cor_beat_m AS b 
+  ON a.beat_id = b.beat_id
+LEFT JOIN crm_dev_db.cor_emp_m AS c
+  ON a.joint_id = c.emp_id
+WHERE a.user_id = ? 
+  AND MONTH(a.outlet_date) = ? 
+  AND YEAR(a.outlet_date) = ?;
+
+  `;
+
+  sql.query(query, [empidd, month, year], (err, res) => {
+    if (err) {
+      console.error("Fetch Error:", err);
+      result({ error: true, data: "Failed to fetch MTP Tour Plan" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+
+reports.GetEmployeeLeaves = (req, result) => {
+  const { empidd, month, year } = req.query;
+
+  const startOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+  const endOfMonth = `${year}-${String(month).padStart(2, "0")}-${new Date(year, month, 0).getDate()}`;
+
+  const query = `
+    WITH RECURSIVE date_range AS (
+      SELECT start_date AS leave_date, end_date
+      FROM crm_dev_db.cor_leave_m
+      WHERE emp_id = ? 
+        AND (
+            (MONTH(start_date) = ? AND YEAR(start_date) = ?)
+         OR (MONTH(end_date) = ? AND YEAR(end_date) = ?)
+         OR (start_date <= ? AND end_date >= ?)
+        )
+      UNION ALL
+      SELECT leave_date + INTERVAL 1 DAY, end_date
+      FROM date_range
+      WHERE leave_date + INTERVAL 1 DAY <= end_date
+    )
+    SELECT leave_date
+    FROM date_range
+    WHERE MONTH(leave_date) = ? AND YEAR(leave_date) = ?
+    ORDER BY leave_date;
+  `;
+
+  sql.query(
+    query,
+    [empidd, month, year, month, year, endOfMonth, startOfMonth, month, year],
+    (err, res) => {
+      if (err) {
+        console.error("Fetch Error:", err);
+        result({ error: true, data: "Failed to fetch Employee Leaves" });
+      } else {
+        result({ error: false, data: res });
+      }
+    }
+  );
+};
+
+
+reports.GetHolidays = (req, result) => {
+  const { state_id, month, year } = req.query;
+
+  const query = `
+  SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, holiday_name 
+  FROM romsondb.cor_holiday_m 
+  WHERE state_id = ?
+    AND YEAR(date) = ?
+    AND MONTH(date) = ?;
+  `;
+
+  sql.query(query, [state_id, year, month], (err, res) => {
+    if (err) {
+      console.error("Fetch Error:", err);
+      result({ error: true, data: "Failed to fetch holidays" });
+    } else {
+      console.log("🔎 SQL result:", res);
+      result({ error: false, data: res });
+    }
+  });
+};
+
+
+reports.GetMtpDateStatus = async (req, res) => {
+  try {
+    const { user_id, start_date, end_date } = req.body;
+    if (!user_id || !start_date || !end_date) {
+      return res.status(400).json({ error: true, message: "user_id, start_date, end_date required" });
+    }
+
+    const employee_state_id = await getEmployeeStateId(user_id);
+
+    // ✅ Generate all dates between start_date and end_date
+    const dates = [];
+    let current = moment(start_date);
+    const end = moment(end_date);
+    while (current <= end) {
+      dates.push(current.format("YYYY-MM-DD"));
+      current.add(1, "day");
+    }
+
+    // ✅ Prepare status for each date
+    const statusPromises = dates.map(async (date) => {
+      const dayName = moment(date).format("dddd");
+
+      // Week Off check
+      if (
+        (employee_state_id == 39 && dayName === "Saturday") ||
+        (employee_state_id != 39 && dayName === "Sunday")
+      ) {
+        return { date, status: "week_off" };
+      }
+
+      // Holiday check
+      const isHoliday = await new Promise((resolve) => {
+        sql.query(
+          `SELECT id FROM crm_dev_db.cor_holiday_m WHERE state_id = ? AND date = ?`,
+          [employee_state_id, date],
+          (err, res) => resolve(res?.length > 0)
+        );
+      });
+      if (isHoliday) return { date, status: "holiday" };
+
+      // Leave check
+      const isLeave = await new Promise((resolve) => {
+        sql.query(
+          `SELECT id FROM crm_dev_db.cor_leave_m 
+           WHERE emp_id = ? AND ? BETWEEN start_date AND end_date`,
+          [user_id, date],
+          (err, res) => resolve(res?.length > 0)
+        );
+      });
+      if (isLeave) return { date, status: "leave" };
+
+      return { date, status: "working" };
+    });
+
+    const resultData = await Promise.all(statusPromises);
+
+    res.json({ error: false, data: resultData });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: true, message: "Failed to fetch MTP date status" });
+  }
+};
 
 
 

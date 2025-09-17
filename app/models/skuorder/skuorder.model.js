@@ -699,7 +699,7 @@ skuorder.GetFollowUpActivities = async (req, results) => {
 
 
 skuorder.AddNewTask = async (req, result) => {
-  const { taskname, status, remarks, jointid, jointname, priority, followup, enterBy } = req.body;
+  const { taskname, status, remarks, jointid, jointname, priority, followup, enterBy,tasklat, tasklag } = req.body;
 
   
   if (taskname && taskname.length > 240) {
@@ -711,14 +711,14 @@ skuorder.AddNewTask = async (req, result) => {
   }
 
   let query = `
-    INSERT INTO crm_dev_db.cor_task_m (
-      enter_date, task_name, status, remarks, joint_id, joint_name, priority, follow_up, enter_by
+    INSERT INTO romsondb.cor_task_m (
+      enter_date, task_name, status, remarks, joint_id, joint_name, priority, follow_up, enter_by,task_lat,task_lag
     ) VALUES (
-      NOW(), ?, ?, ?, ?, ?, ?, ?, ?
+      NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )
   `;
 
-  const values = [taskname, status, remarks, jointid, jointname, priority, followup, enterBy];
+  const values = [taskname, status, remarks, jointid, jointname, priority, followup, enterBy, tasklat, tasklag];
 
   sql.query(query, values, (err, res) => {
     if (err) {

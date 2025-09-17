@@ -436,3 +436,55 @@ exports.Totalskuorderwise = (req, res) => {
 
 
 };
+
+exports.TaskShowDaysummary = (req, res) => {
+  reportsModel.TaskShowDaysummary(req,(data) => {
+  // console.log('listAuth -------', data);
+  res.send(data);
+});
+};
+
+
+/////////////////MTP-TOUR-PLAN-API///////////////////////////////////
+exports.MtpTourPlanBeat = (req, res) => {
+  reportsModel.MtpTourPlanBeat(req,(data) => {
+  // console.log('listAuth -------', data);
+  res.send(data);
+});
+};
+
+exports.InsertMtpTourPlan = (req, res) => {
+  reportsModel.InsertMtpTourPlan(req,(data) => {
+  // console.log('listAuth -------', data);
+  res.send(data);
+});
+};
+
+
+
+exports.GetMtpTourPlan = (req, res) => {
+  reportsModel.GetMtpTourPlan(req,(data) => {
+  // console.log('listAuth -------', data);
+  res.send(data);
+});
+};
+
+exports.GetMtpDateStatus = (req, res) => {
+  reportsModel.GetMtpDateStatus(req,(data) => {
+  // console.log('listAuth -------', data);
+  res.send(data);
+});
+};
+
+exports.GetEmployeeLeaves = (req, res) => {
+  reportsModel.GetEmployeeLeaves(req,(data) => {
+  // console.log('listAuth -------', data);
+  res.send(data);
+});
+};
+
+exports.GetHolidays = (req, res) => {
+  reportsModel.GetHolidays(req,(data) => {
+  res.send(data);
+});
+};

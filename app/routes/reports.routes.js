@@ -53,6 +53,13 @@ module.exports = app => {
     // router.get("/getOrdersAndActivitiesByDateAddress", Reports.getOrdersAndActivitiesByDateAddress);
     router.post("/skuorderwise", Reports.skuorderwise);
     router.post("/Totalskuorderwise", Reports.Totalskuorderwise);
+    router.post("/TaskShowDaysummary", Reports.TaskShowDaysummary);
+    router.get("/MtpTourPlanBeat", Reports.MtpTourPlanBeat);
+    router.post("/InsertMtpTourPlan", Reports.InsertMtpTourPlan);
+    router.get("/GetMtpTourPlan", Reports.GetMtpTourPlan);
+    router.post("/GetMtpDateStatus", Reports.GetMtpDateStatus);
+    router.get("/GetEmployeeLeaves", Reports.GetEmployeeLeaves);
+    router.get("/GetHolidays", Reports.GetHolidays);
     app.use('/', router);
   };
   

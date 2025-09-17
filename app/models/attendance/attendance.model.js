@@ -455,9 +455,9 @@ attendance.LeaveApp = (req, result) => {
         0
       ) AS sl_balance
     FROM 
-      romsondb.cor_leave_summary sm
+      crm_dev_db.cor_leave_summary sm
     LEFT JOIN 
-      romsondb.cor_leave_m lm 
+      crm_dev_db.cor_leave_m lm 
     ON 
       sm.emp_id = lm.emp_id 
       AND sm.leave_type = lm.leave_type
@@ -493,7 +493,7 @@ attendance.LeaveApp = (req, result) => {
 
     // Check for overlapping leave applications
     const overlapCheckQuery = `
-      SELECT * FROM romsondb.cor_leave_m 
+      SELECT * FROM crm_dev_db.cor_leave_m 
       WHERE emp_id = '${empID}' 
       AND (
         (start_date <= '${fromDate}' AND end_date >= '${fromDate}') OR
@@ -515,7 +515,7 @@ attendance.LeaveApp = (req, result) => {
 
       // Insert leave application with the determined leave type
       const insertLeaveQuery = `
-        INSERT INTO romsondb.cor_leave_m 
+        INSERT INTO crm_dev_db.cor_leave_m 
           (emp_id, reporting_to, leave_type, start_date, end_date, leave_days, leave_reason, enter_by, enter_date)
         VALUES 
           ('${empID}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${toDate}', '${numofdays}', '${leavereason}', '${enterBy}', sysdate())`;
@@ -1676,9 +1676,9 @@ attendance.leave_history = (req, result) => {
     COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 0) AS total_allocated_leave
 
 FROM 
-    romsondb.cor_leave_summary sm
+    crm_dev_db.cor_leave_summary sm
 LEFT JOIN 
-    romsondb.cor_leave_m lm 
+    crm_dev_db.cor_leave_m lm 
 ON 
     sm.emp_id = lm.emp_id 
     AND sm.leave_type = lm.leave_type
@@ -1722,7 +1722,7 @@ GROUP BY
 ///for select leave type
 
 attendance.LeaveType = (req, result) => {
-  sql.query(`select leave_type,leave_description from romsondb.cor_leave_type`, (err, res) => {
+  sql.query(`select leave_type,leave_description from crm_dev_db.cor_leave_type`, (err, res) => {
     // console.log("osbss: ", res);
     if (err) {
       result({ error: true, data: "Something Went Wrong" })
@@ -2026,7 +2026,8 @@ attendance.leaveReportSummary = (req, result) => {
        WHERE lm.start_date <= '${toDate}'
       AND lm.end_date >= '${fromDate}'
       ${statusCondition}
-  GROUP BY lm.id;
+  GROUP BY lm.id
+  ORDER BY lm.start_date ASC;
   `;
 
   console.log("Executing Query:", query);
@@ -2602,17 +2603,18 @@ SELECT
     r.Regular_id,
     r.enter_by,
     TRIM(e.user_name) AS emp_name,
-    DATE_FORMAT(r.request_date, '%Y-%m-%d') AS requested_date,
+    DATE_FORMAT(r.request_date, '%d/%m/%Y') AS requested_date,
     DATE_FORMAT(COALESCE(r.punch_in, a.punch_in), '%Y-%m-%d %H:%i:%s') AS punch_in,
     DATE_FORMAT(COALESCE(r.punch_out, a.punch_out), '%Y-%m-%d %H:%i:%s') AS punch_out,
     r.Request_Remarks,
+    e.emp_code,
     CASE 
         WHEN r.status = 'P' THEN 'Pending'
         WHEN r.status = 'A' THEN 'Accepted'
         WHEN r.status = 'R' THEN 'Rejected'
     END AS status,
     CONCAT(IFNULL(r.Approved_ID, ''), ' - ', IFNULL(approver.user_name, '')) AS approved_by,
-    DATE_FORMAT(r.Approved_date, '%Y-%m-%d') AS approved_date
+    DATE_FORMAT(r.Approved_date, '%d/%m/%Y') AS approved_date
 FROM romsondb.cor_regulization_m r
 LEFT JOIN romsondb.cor_emp_m e 
     ON r.enter_by = e.emp_id
@@ -2635,7 +2637,8 @@ WHERE r.request_date BETWEEN ? AND ?
     queryParams.push(status, status, status);
   }
 
-  // query += ` ORDER BY r.request_date DESC`;
+  query += `ORDER BY r.request_date ASC
+`;
 
   console.log("Executing Query:", query, "With Params:", queryParams);
 

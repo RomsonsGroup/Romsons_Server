@@ -77,6 +77,7 @@ auth.login = (req, result) => {
     em.status,
     em.address, 
     em.reporting_to,
+    em.state_id,
     rol.role_name, 
     rol.status AS rol_status,
     rol.alias AS rol_alias_name,
@@ -86,9 +87,9 @@ auth.login = (req, result) => {
     em.sg_code,
     em.department_id,
     em.deleted_at
-  FROM ((crm_dev_db.cor_emp_m em
-  INNER JOIN crm_dev_db.cor_role_m rol ON em.role = rol.role_id)
-  INNER JOIN crm_dev_db.cor_division_m dev ON em.division = dev.division_id)  
+  FROM ((romsondb.cor_emp_m em
+  INNER JOIN romsondb.cor_role_m rol ON em.role = rol.role_id)
+  INNER JOIN romsondb.cor_division_m dev ON em.division = dev.division_id)  
   WHERE em.emp_id = '${empid}' AND em.password = '${Password}'`, (err, res) => {
     if (err) {
       console.log(err);
