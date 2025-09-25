@@ -60,6 +60,12 @@ module.exports = app => {
     router.post("/GetMtpDateStatus", Reports.GetMtpDateStatus);
     router.get("/GetEmployeeLeaves", Reports.GetEmployeeLeaves);
     router.get("/GetHolidays", Reports.GetHolidays);
+    router.get("/MtpPendingList", Reports.MtpPendingList);
+    router.post("/MtpApprovedIdBy", Reports.MtpApprovedIdBy);
+    router.get("/MtpApprovedList", Reports.MtpApprovedList);
+    router.post("/MtpRejectedIdBy", Reports.MtpRejectedIdBy);
+    router.get("/MtpRejectedList", Reports.MtpRejectedList);
+    router.get("/MtpBeatidOutlet", Reports.MtpBeatidOutlet);
     app.use('/', router);
   };
   

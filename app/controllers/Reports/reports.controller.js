@@ -436,7 +436,7 @@ exports.Totalskuorderwise = (req, res) => {
 
 
 };
-
+//////////////////////New api- 2nd -phase//////////////////////
 exports.TaskShowDaysummary = (req, res) => {
   reportsModel.TaskShowDaysummary(req,(data) => {
   // console.log('listAuth -------', data);
@@ -485,6 +485,42 @@ exports.GetEmployeeLeaves = (req, res) => {
 
 exports.GetHolidays = (req, res) => {
   reportsModel.GetHolidays(req,(data) => {
+  res.send(data);
+});
+};
+
+exports.MtpPendingList = (req, res) => {
+  reportsModel.MtpPendingList(req,(data) => {
+  res.send(data);
+});
+};
+
+exports.MtpApprovedIdBy = (req, res) => {
+  reportsModel.MtpApprovedIdBy(req,(data) => {
+  res.send(data);
+});
+};
+
+exports.MtpApprovedList = (req, res) => {
+  reportsModel.MtpApprovedList(req,(data) => {
+  res.send(data);
+});
+};
+
+exports.MtpRejectedIdBy = (req, res) => {
+  reportsModel.MtpRejectedIdBy(req,(data) => {
+  res.send(data);
+});
+};
+
+exports.MtpRejectedList = (req, res) => {
+  reportsModel.MtpRejectedList(req,(data) => {
+  res.send(data);
+});
+};
+
+exports.MtpBeatidOutlet = (req, res) => {
+  reportsModel.MtpBeatidOutlet(req,(data) => {
   res.send(data);
 });
 };

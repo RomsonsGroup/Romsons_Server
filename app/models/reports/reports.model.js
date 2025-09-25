@@ -1979,8 +1979,6 @@ reports.RejectedRegularizationList = (req, result) => {
 };
 
 reports.ApprovedRegularizationList = (req, result) => {
-  // console.log("Rejected Regularization List is hitting");
-
   sql.query(`
     SELECT 
       r.Request_date,
@@ -2334,6 +2332,206 @@ reports.GetMtpDateStatus = async (req, res) => {
   }
 };
 
+
+/////////////////////////MTP-APPROVAL-API//////////////////////////////////////
+
+
+reports.MtpPendingList = (req, result) => {
+  const reportingTo = req.query.empidd;
+  const month = req.query.month ? parseInt(req.query.month, 10) : new Date().getMonth() + 1;
+  const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
+
+  const query = `
+    SELECT  
+      m.*,  
+      m.user_id,  
+      m.beat_id,  
+      DATE_FORMAT(m.outlet_date, '%d/%m/%Y') AS outlet_date,
+      DATE_FORMAT(m.enter_date, '%d/%m/%Y %H:%i') AS enter_date,
+      m.comments,  
+      m.plan_type,  
+      m.joint_id,  
+      m.approved_by,  
+      m.approved_date,  
+      e.user_name,  
+      b.beat_name
+    FROM crm_dev_db.cor_mtp_a m  
+    JOIN crm_dev_db.cor_emp_m e ON m.user_id = e.emp_id  
+    LEFT JOIN crm_dev_db.cor_beat_m b ON m.beat_id = b.beat_id  
+    WHERE e.reporting_to = ?  
+      AND m.approved_by IS NULL  
+      AND m.approved_date IS NULL  
+      AND MONTH(m.enter_date) = ?  
+      AND YEAR(m.enter_date) = ?  
+    ORDER BY m.enter_date DESC;
+  `;
+
+  sql.query(query, [reportingTo, month, year], (err, res) => {
+    if (err) {
+      console.error("MtpPendingList Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+reports.MtpApprovedIdBy = (req, result) => {
+  const { ids, approverId, month, year } = req.body;
+  const query = `
+    UPDATE crm_dev_db.cor_mtp_a
+    SET 
+        approved_by = ?, 
+        approved_date = NOW(), 
+        status = 'A'
+    WHERE 
+        id IN (?) 
+        AND MONTH(enter_date) = ? 
+        AND YEAR(enter_date) = ?
+  `;
+
+  sql.query(query, [approverId, ids, month, year], (err, res) => {
+    if (err) {
+      console.error("MtpApproved Query Error:", err);
+      result({ error: true, data: "Something went wrong" });
+    } else {
+      result({ error: false, data: "MTP approved successfully" });
+    }
+  });
+};
+
+reports.MtpApprovedList = (req, result) => {
+  const reportingTo = req.query.empidd;
+  const month = req.query.month ? parseInt(req.query.month, 10) : new Date().getMonth() + 1;
+  const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
+
+  const query = `
+    SELECT  
+      m.*,  
+      m.user_id,  
+      m.beat_id,  
+      DATE_FORMAT(m.outlet_date, '%d/%m/%Y') AS outlet_date,
+      DATE_FORMAT(m.enter_date, '%d/%m/%Y %H:%i') AS enter_date,
+      m.comments,  
+      m.plan_type,  
+      m.joint_id,  
+      m.approved_by,  
+      DATE_FORMAT(m.approved_date, '%d/%m/%Y') AS approved_date,
+      e.user_name,  
+      b.beat_name
+    FROM crm_dev_db.cor_mtp_a m  
+    JOIN crm_dev_db.cor_emp_m e ON m.user_id = e.emp_id  
+    LEFT JOIN crm_dev_db.cor_beat_m b ON m.beat_id = b.beat_id  
+    WHERE e.reporting_to = ?
+      AND m.status = 'A'
+      AND m.approved_by IS NOT NULL  
+      AND m.approved_date IS NOT NULL
+      AND MONTH(m.enter_date) = ?
+      AND YEAR(m.enter_date) = ?
+    ORDER BY m.enter_date DESC;
+  `;
+
+  sql.query(query, [reportingTo, month, year], (err, res) => {
+    if (err) {
+      console.error("MtpApprovedList Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+reports.MtpRejectedIdBy = (req, result) => {
+  const { ids, approverId, month, year } = req.body;
+  const query = `
+    UPDATE crm_dev_db.cor_mtp_a
+    SET 
+        approved_by = ?, 
+        approved_date = NOW(), 
+        status = 'R'
+    WHERE 
+        id IN (?) 
+        AND MONTH(enter_date) = ? 
+        AND YEAR(enter_date) = ?
+  `;
+
+  sql.query(query, [approverId, ids, month, year], (err, res) => {
+    if (err) {
+      console.error("MtpApproved Query Error:", err);
+      result({ error: true, data: "Something went wrong" });
+    } else {
+      result({ error: false, data: "MTP rejected successfully" });
+    }
+  });
+};
+
+reports.MtpRejectedList = (req, result) => {
+  const reportingTo = req.query.empidd;
+  const month = req.query.month ? parseInt(req.query.month, 10) : new Date().getMonth() + 1;
+  const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
+
+  const query = `
+    SELECT  
+      m.*,  
+      m.user_id,  
+      m.beat_id,  
+      DATE_FORMAT(m.outlet_date, '%d/%m/%Y') AS outlet_date,
+      DATE_FORMAT(m.enter_date, '%d/%m/%Y %H:%i') AS enter_date,
+      m.comments,  
+      m.plan_type,  
+      m.joint_id,  
+      m.approved_by,  
+      DATE_FORMAT(m.approved_date, '%d/%m/%Y') AS approved_date,
+      e.user_name,  
+      b.beat_name
+    FROM crm_dev_db.cor_mtp_a m  
+    JOIN crm_dev_db.cor_emp_m e ON m.user_id = e.emp_id  
+    LEFT JOIN crm_dev_db.cor_beat_m b ON m.beat_id = b.beat_id  
+    WHERE e.reporting_to = ?
+      AND m.status = 'R'
+      AND m.approved_by IS NOT NULL  
+      AND m.approved_date IS NOT NULL
+      AND MONTH(m.enter_date) = ?
+      AND YEAR(m.enter_date) = ?
+    ORDER BY m.enter_date DESC;
+  `;
+
+  sql.query(query, [reportingTo, month, year], (err, res) => {
+    if (err) {
+      console.error("MtpApprovedList Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+reports.MtpBeatidOutlet = (req, result) => {
+  const beat_id = req.query.beat_id;
+  const query = `
+      SELECT
+          b.beat_id,
+          b.beat_assigning_form_id,
+          b.beat_name,
+          GROUP_CONCAT(o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') AS outlet_names
+      FROM romsondb.cor_beat_m AS b
+      LEFT JOIN romsondb.cor_outlet_m AS o
+          ON b.beat_id = o.beat_id
+      WHERE b.beat_id = ?
+      GROUP BY b.beat_id, b.beat_name;
+  `;
+
+  console.log("Executing Query:", query, "with beat_id:", beat_id);
+
+  sql.query(query, [beat_id], (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
 
 
 module.exports = reports;
