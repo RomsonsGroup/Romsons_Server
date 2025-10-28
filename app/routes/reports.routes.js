@@ -57,7 +57,6 @@ module.exports = app => {
     router.get("/MtpTourPlanBeat", Reports.MtpTourPlanBeat);
     router.post("/InsertMtpTourPlan", Reports.InsertMtpTourPlan);
     router.get("/GetMtpTourPlan", Reports.GetMtpTourPlan);
-    router.post("/GetMtpDateStatus", Reports.GetMtpDateStatus);
     router.get("/GetEmployeeLeaves", Reports.GetEmployeeLeaves);
     router.get("/GetHolidays", Reports.GetHolidays);
     router.get("/MtpPendingList", Reports.MtpPendingList);

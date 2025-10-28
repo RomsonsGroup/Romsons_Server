@@ -186,6 +186,12 @@ exports.ValidationAttendance = (req, res) => {
     });
   };
 
+  exports.CrmOrderReport = (req, res) => {
+    attendancemodel.CrmOrderReport(req,(data) => {
+      res.send(data);
+    });
+  };
+
   exports.RegularizationReport = (req, res) => {
     attendancemodel.RegularizationReport(req,(data) => {
       res.send(data);

@@ -2040,7 +2040,7 @@ reports.MtpTourPlanBeat = (req, result) => {
   const empidd = req.query.empidd;
   const query = `
     SELECT beat_id, beat_name, beat_assigning_form_id 
-    FROM romsondb.cor_beat_m 
+    FROM crm_dev_db.cor_beat_m 
     WHERE beat_assigning_form_id = '${empidd}' AND status = 'A'`;
 
   console.log("Executing Query:", query);
@@ -2060,7 +2060,7 @@ const getEmployeeStateId = (user_id) => {
     const query = `SELECT state_id FROM crm_dev_db.cor_emp_m WHERE emp_id = ?`;
     sql.query(query, [user_id], (err, res) => {
       if (err) return reject("Cannot fetch state_id");
-      resolve(res[0]?.state_id);
+      resolve(res.length > 0 ? res[0].state_id : null);
     });
   });
 };
@@ -2251,7 +2251,7 @@ reports.GetHolidays = (req, result) => {
 
   const query = `
   SELECT DATE_FORMAT(date, '%Y-%m-%d') AS date, holiday_name 
-  FROM romsondb.cor_holiday_m 
+  FROM crm_dev_db.cor_holiday_m 
   WHERE state_id = ?
     AND YEAR(date) = ?
     AND MONTH(date) = ?;
@@ -2267,71 +2267,6 @@ reports.GetHolidays = (req, result) => {
     }
   });
 };
-
-
-reports.GetMtpDateStatus = async (req, res) => {
-  try {
-    const { user_id, start_date, end_date } = req.body;
-    if (!user_id || !start_date || !end_date) {
-      return res.status(400).json({ error: true, message: "user_id, start_date, end_date required" });
-    }
-
-    const employee_state_id = await getEmployeeStateId(user_id);
-
-    // ✅ Generate all dates between start_date and end_date
-    const dates = [];
-    let current = moment(start_date);
-    const end = moment(end_date);
-    while (current <= end) {
-      dates.push(current.format("YYYY-MM-DD"));
-      current.add(1, "day");
-    }
-
-    // ✅ Prepare status for each date
-    const statusPromises = dates.map(async (date) => {
-      const dayName = moment(date).format("dddd");
-
-      // Week Off check
-      if (
-        (employee_state_id == 39 && dayName === "Saturday") ||
-        (employee_state_id != 39 && dayName === "Sunday")
-      ) {
-        return { date, status: "week_off" };
-      }
-
-      // Holiday check
-      const isHoliday = await new Promise((resolve) => {
-        sql.query(
-          `SELECT id FROM crm_dev_db.cor_holiday_m WHERE state_id = ? AND date = ?`,
-          [employee_state_id, date],
-          (err, res) => resolve(res?.length > 0)
-        );
-      });
-      if (isHoliday) return { date, status: "holiday" };
-
-      // Leave check
-      const isLeave = await new Promise((resolve) => {
-        sql.query(
-          `SELECT id FROM crm_dev_db.cor_leave_m 
-           WHERE emp_id = ? AND ? BETWEEN start_date AND end_date`,
-          [user_id, date],
-          (err, res) => resolve(res?.length > 0)
-        );
-      });
-      if (isLeave) return { date, status: "leave" };
-
-      return { date, status: "working" };
-    });
-
-    const resultData = await Promise.all(statusPromises);
-
-    res.json({ error: false, data: resultData });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: true, message: "Failed to fetch MTP date status" });
-  }
-};
-
 
 /////////////////////////MTP-APPROVAL-API//////////////////////////////////////
 
@@ -2514,8 +2449,8 @@ reports.MtpBeatidOutlet = (req, result) => {
           b.beat_assigning_form_id,
           b.beat_name,
           GROUP_CONCAT(o.outlet_name ORDER BY o.outlet_name SEPARATOR ', ') AS outlet_names
-      FROM romsondb.cor_beat_m AS b
-      LEFT JOIN romsondb.cor_outlet_m AS o
+      FROM crm_dev_db.cor_beat_m AS b
+      LEFT JOIN crm_dev_db.cor_outlet_m AS o
           ON b.beat_id = o.beat_id
       WHERE b.beat_id = ?
       GROUP BY b.beat_id, b.beat_name;

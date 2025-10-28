@@ -469,12 +469,6 @@ exports.GetMtpTourPlan = (req, res) => {
 });
 };
 
-exports.GetMtpDateStatus = (req, res) => {
-  reportsModel.GetMtpDateStatus(req,(data) => {
-  // console.log('listAuth -------', data);
-  res.send(data);
-});
-};
 
 exports.GetEmployeeLeaves = (req, res) => {
   reportsModel.GetEmployeeLeaves(req,(data) => {

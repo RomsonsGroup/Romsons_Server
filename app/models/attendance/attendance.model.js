@@ -421,51 +421,87 @@ attendance.attendance_punchout = (req, result) => {
 attendance.LeaveApp = (req, result) => {
   const { empID, rpPerson, fromDate, toDate, numofdays, leavereason, enterBy, leaveType } = req.body;
 
-  // Determine initial leave type based on number of days
-  // Use leaveType from frontend if passed, otherwise fallback logic
-  let conditionalLeaveType = leaveType;
-
-  if (!conditionalLeaveType) {
-    if (numofdays === 1) {
-      conditionalLeaveType = 'SL';
-    } else if (numofdays === 2) {
-      conditionalLeaveType = 'CL';
-    } else {
-      conditionalLeaveType = 'EL';
-    }
+  if (!leaveType) {
+    result({ error: true, data: "Leave type is required" });
+    return;
   }
 
+  let conditionalLeaveType = leaveType.trim().toUpperCase();
 
-  // Query to check leave balances for the employee
+
+  if (conditionalLeaveType === "ML") {
+    const startDate = new Date(fromDate);
+    const endDate = new Date(startDate);
+    endDate.setMonth(endDate.getMonth() + 6);
+
+    const diffTime = Math.abs(endDate - startDate);
+    const leaveDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    const endDateStr = endDate.toISOString().split("T")[0];
+
+    // 🔍 Overlap check
+    const overlapCheckQuery = `
+      SELECT * FROM crm_dev_db.cor_leave_m
+      WHERE emp_id = '${empID}'
+      AND (
+        (start_date <= '${fromDate}' AND end_date >= '${fromDate}') OR
+        (start_date <= '${endDateStr}' AND end_date >= '${endDateStr}') OR
+        (start_date >= '${fromDate}' AND end_date <= '${endDateStr}')
+      )`;
+
+    sql.query(overlapCheckQuery, (err, res) => {
+      if (err) {
+        console.log(err);
+        result({ error: true, data: "Something Went Wrong" });
+        return;
+      }
+
+      if (res.length > 0) {
+        result({ error: true, data: "Leave already applied for the selected dates" });
+        return;
+      }
+
+      ////////////////////ML-INSERT////////////////////////////
+      const insertLeaveQuery = `
+        INSERT INTO crm_dev_db.cor_leave_m 
+          (emp_id, reporting_to, leave_type, start_date, end_date, leave_days, leave_reason, enter_by, enter_date)
+        VALUES 
+          ('${empID}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${endDateStr}', ${leaveDays}, '${leavereason}', '${enterBy}', sysdate())`;
+
+      sql.query(insertLeaveQuery, (err, insertRes) => {
+        if (err) {
+          console.log(err);
+          result({ error: true, data: "Something Went Wrong" });
+          return;
+        }
+
+        result({
+          error: false,
+          data: insertRes,
+          msg: `Maternity Leave applied successfully for ${leaveDays} days (${fromDate} to ${endDateStr}).`
+        });
+      });
+    });
+
+    return;
+  }
+
+  // ✅ For CL, EL, SL → check balances
   const leaveBalanceQuery = `
     SELECT 
-      GREATEST(
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END), 12) - 
-        COALESCE(SUM(CASE WHEN lm.leave_type = 'CL' THEN lm.leave_days ELSE 0 END), 0), 
-        0
-      ) AS cl_balance,
-      GREATEST(
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END), 15) - 
-        COALESCE(SUM(CASE WHEN lm.leave_type = 'EL' THEN lm.leave_days ELSE 0 END), 0), 
-        0
-      ) AS el_balance,
-      GREATEST(
-        COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END), 6) - 
-        COALESCE(SUM(CASE WHEN lm.leave_type = 'SL' THEN lm.leave_days ELSE 0 END), 0), 
-        0
-      ) AS sl_balance
-    FROM 
-      crm_dev_db.cor_leave_summary sm
-    LEFT JOIN 
-      crm_dev_db.cor_leave_m lm 
-    ON 
-      sm.emp_id = lm.emp_id 
+      GREATEST(COALESCE(MAX(CASE WHEN sm.leave_type = 'CL' THEN sm.leave_count ELSE 0 END),0) - 
+              COALESCE(SUM(CASE WHEN lm.leave_type = 'CL' THEN lm.leave_days ELSE 0 END),0),0) AS cl_balance,
+      GREATEST(COALESCE(MAX(CASE WHEN sm.leave_type = 'EL' THEN sm.leave_count ELSE 0 END),0) - 
+              COALESCE(SUM(CASE WHEN lm.leave_type = 'EL' THEN lm.leave_days ELSE 0 END),0),0) AS el_balance,
+      GREATEST(COALESCE(MAX(CASE WHEN sm.leave_type = 'SL' THEN sm.leave_count ELSE 0 END),0) - 
+              COALESCE(SUM(CASE WHEN lm.leave_type = 'SL' THEN lm.leave_days ELSE 0 END),0),0) AS sl_balance
+    FROM crm_dev_db.cor_leave_summary sm
+    LEFT JOIN crm_dev_db.cor_leave_m lm 
+      ON sm.emp_id = lm.emp_id 
       AND sm.leave_type = lm.leave_type
       AND YEAR(lm.enter_date) = YEAR(CURRENT_DATE())
-    WHERE 
-      sm.emp_id = '${empID}'
-    GROUP BY 
-      sm.emp_id`;
+    WHERE sm.emp_id = '${empID}'
+    GROUP BY sm.emp_id`;
 
   sql.query(leaveBalanceQuery, (err, balanceRes) => {
     if (err) {
@@ -474,27 +510,37 @@ attendance.LeaveApp = (req, result) => {
       return;
     }
 
-    // Extract leave balances or assign default values
-    const { cl_balance, el_balance, sl_balance } = balanceRes[0] || { cl_balance: 12, el_balance: 15, sl_balance: 6 };
+    const { cl_balance = 0, el_balance = 0, sl_balance = 0 } = balanceRes[0] || {};
+    let selectedBalance = 0;
 
-    // Determine final leave type based on balance and number of days
-    let lopMessage = null;
+    // Balance check only for CL/EL/SL///////////////////////////////
+    selectedBalance =
+      conditionalLeaveType === 'CL' ? cl_balance :
+        conditionalLeaveType === 'EL' ? el_balance :
+          conditionalLeaveType === 'SL' ? sl_balance : 0;
 
-    if (conditionalLeaveType === 'SL' && sl_balance > 0) {
-      conditionalLeaveType = 'SL';
-    } else if (conditionalLeaveType === 'CL' && cl_balance > 0) {
-      conditionalLeaveType = 'CL';
-    } else if (conditionalLeaveType === 'EL' && el_balance > 0) {
-      conditionalLeaveType = 'EL';
-    } else {
-      conditionalLeaveType = 'LOP';
-      lopMessage = "You do not have sufficient leave balance. Your leave will be marked as LOP (Loss of Pay).";
+    if (selectedBalance <= 0) {
+      const otherBalances = { CL: cl_balance, EL: el_balance, SL: sl_balance };
+      delete otherBalances[conditionalLeaveType];
+
+      const hasOtherBalance = Object.values(otherBalances).some(b => b > 0);
+
+      if (hasOtherBalance) {
+        result({ error: true, data: `No ${conditionalLeaveType} balance available. Please select another leave type.` });
+        return;
+      } else {
+        conditionalLeaveType = 'LOP';
+      }
     }
 
-    // Check for overlapping leave applications
+
+    console.log("Balances => CL:", cl_balance, "EL:", el_balance, "SL:", sl_balance);
+    console.log("Selected leaveType:", conditionalLeaveType, "Selected balance:", selectedBalance);
+
+    // 🔍 Overlap check
     const overlapCheckQuery = `
-      SELECT * FROM crm_dev_db.cor_leave_m 
-      WHERE emp_id = '${empID}' 
+      SELECT * FROM crm_dev_db.cor_leave_m
+      WHERE emp_id = '${empID}'
       AND (
         (start_date <= '${fromDate}' AND end_date >= '${fromDate}') OR
         (start_date <= '${toDate}' AND end_date >= '${toDate}') OR
@@ -513,12 +559,11 @@ attendance.LeaveApp = (req, result) => {
         return;
       }
 
-      // Insert leave application with the determined leave type
       const insertLeaveQuery = `
         INSERT INTO crm_dev_db.cor_leave_m 
           (emp_id, reporting_to, leave_type, start_date, end_date, leave_days, leave_reason, enter_by, enter_date)
         VALUES 
-          ('${empID}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${toDate}', '${numofdays}', '${leavereason}', '${enterBy}', sysdate())`;
+          ('${empID}', '${rpPerson}', '${conditionalLeaveType}', '${fromDate}', '${toDate}', ${numofdays}, '${leavereason}', '${enterBy}', sysdate())`;
 
       sql.query(insertLeaveQuery, (err, insertRes) => {
         if (err) {
@@ -527,19 +572,17 @@ attendance.LeaveApp = (req, result) => {
           return;
         }
 
-        // Provide appropriate response message
         result({
           error: false,
           data: insertRes,
-          msg: lopMessage
-            ? lopMessage + " Leave application submitted successfully."
-            : "Leave application submitted successfully.",
+          msg: conditionalLeaveType === 'LOP'
+            ? "No leave balances available. Leave marked as LOP."
+            : "Leave application submitted successfully."
         });
       });
     });
   });
 };
-
 
 
 // attendance.LeaveApp = (req, result) => {
@@ -685,16 +728,8 @@ attendance.LeaveApp = (req, result) => {
 // };
 
 
-
-
-
-
-
-
-
-
 attendance.LeaveCount = (req, result) => {
-  sql.query(`SELECT sum(leave_days) as leaveTake FROM romsondb.cor_leave_m where emp_id='${req.body.empid}'  AND YEAR(enter_date) = YEAR(CURRENT_DATE());`,
+  sql.query(`SELECT sum(leave_days) as leaveTake FROM crm_dev_db.cor_leave_m where emp_id='${req.body.empid}'  AND YEAR(enter_date) = YEAR(CURRENT_DATE());`,
     (err, res) => {
       console.log("osbss: ", res);
       if (err) {
@@ -703,9 +738,6 @@ attendance.LeaveCount = (req, result) => {
       result(res)
     });
 };
-
-
-
 
 
 // attendance.attandance_count = (req, result) => {
@@ -1181,171 +1213,644 @@ attendance.LeaveCount = (req, result) => {
 
 ///////////////////////////attendance count///////////////////////////////
 
+// attendance.attandance_count = (req, result) => {
+//   const punchDate = req.query.punch_date;
+//   const empId = req.query.emp_id;
+//   const user = JSON.parse(req.headers.authorization);
+
+//   if (user.role === 1) {
+//     let query = `
+//       SELECT 
+//         IFNULL(a.attendance_id, NULL) AS attendance_id,
+//         d.punch_date,
+//         COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
+//         COALESCE(TIME(a.punch_out), '00:00:00') AS punch_out_time,
+//         e.emp_id,
+//         TRIM(e.emp_code) AS emp_code,
+//         TRIM(e.user_name) AS user_name,
+//         'RGPL' AS company_name,
+
+//         CASE 
+//           WHEN DAYOFWEEK(d.punch_date) = 1 THEN 
+//             CASE
+//               WHEN a.leave_status = 2 THEN 'L'
+//               WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+//               ELSE 
+//                 CASE 
+//                   WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
+//                   WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+//                   WHEN a.leave_status = 1 THEN 'A'
+//                   WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+//                   WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
+//                   ELSE 'A'
+//                 END
+//             END
+//           ELSE 
+//             CASE 
+//               WHEN a.leave_status = 2 THEN 'L'
+//               WHEN a.leave_status = 1 THEN 'A'
+//               WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+//               WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
+//               ELSE 'A'
+//             END
+//         END AS attendance_status,
+
+//         -- ✅ Updated leave_type logic
+//         COALESCE((
+//           SELECT lsub.leave_type 
+//           FROM romsondb.cor_leave_m lsub
+//           WHERE lsub.emp_id = e.emp_id
+//             AND DATE(lsub.enter_date) = d.punch_date
+//             AND lsub.status = 2
+//           ORDER BY lsub.start_date ASC
+//           LIMIT 1
+//         ), '0') AS leave_type,
+
+//         CASE 
+//           WHEN a.leave_status = 2 THEN DATE_FORMAT(l.enter_date, '%Y-%m-%d')
+//           ELSE NULL
+//         END AS applied_date,
+
+//         CASE 
+//           WHEN a.leave_status = 2 THEN d.punch_date
+//           WHEN EXISTS (
+//             SELECT 1 FROM romsondb.cor_leave_m lsub
+//             WHERE lsub.emp_id = e.emp_id
+//               AND DATE(lsub.enter_date) = d.punch_date
+//               AND lsub.status = 2
+//           ) THEN (
+//             SELECT MIN(lsub.start_date) FROM romsondb.cor_leave_m lsub
+//             WHERE lsub.emp_id = e.emp_id
+//               AND DATE(lsub.enter_date) = d.punch_date
+//               AND lsub.status = 2
+//           )
+//           ELSE NULL
+//         END AS leave_transaction_date,
+
+//         -- ✅ Regularization Columns (final)
+//         COALESCE(r.status_text, '') AS regu_status,
+//         COALESCE(DATE_FORMAT(r.approved_date, '%Y-%m-%d'), NULL) AS regu_approved,
+//         COALESCE(DATE_FORMAT(r.Request_date, '%Y-%m-%d'), NULL) AS requested_date,
+
+//         IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL,
+//           TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out),
+//           0
+//         ) AS total_hours
+
+//       FROM (SELECT ? AS punch_date) d
+//       LEFT JOIN romsondb.cor_emp_m e ON 1 = 1
+//       LEFT JOIN romsondb.cor_attendance_m a 
+//         ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+//       LEFT JOIN romsondb.cor_leave_m l 
+//         ON e.emp_id = l.emp_id 
+//         AND l.start_date <= d.punch_date 
+//         AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+//       LEFT JOIN romsondb.cor_holiday_m h 
+//         ON FIND_IN_SET(e.state_id, h.state_id) > 0
+//         AND h.date = d.punch_date
+
+//       -- ✅ Join regularization table
+//       LEFT JOIN (
+//     SELECT 
+//       enter_by,
+//       Request_date,
+//       Approved_date,
+//       CASE WHEN status = 'A' THEN 'P' ELSE '' END AS status_text
+//     FROM romsondb.cor_regulization_m
+// ) r 
+// ON e.emp_id = r.enter_by 
+// AND DATE(r.Approved_date) = d.punch_date  -- ✅ only date comparison
+// WHERE e.status = 'A'
+
+//     `;
+
+//     if (empId) {
+//       query += ` AND e.emp_id = ?`;
+//     }
+
+//     const queryParams = empId ? [punchDate, empId] : [punchDate];
+
+//     sql.query(query, queryParams, (err, res) => {
+//       if (err) {
+//         console.error("Query Error: ", err);
+//         result({ error: true, message: "Failed to fetch attendance data" });
+//         return;
+//       }
+
+//       const convertedResults = res
+//         .filter(record => !['11000011', '11000010', '11000102'].includes(String(record.emp_id)))
+//         .map(record => {
+//           if (record.punch_in_time !== '00:00:00') {
+//             record.punch_in_time = moment
+//               .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
+//               .tz('Asia/Kolkata')
+//               .format('h:mm A');
+//           }
+
+//           if (record.punch_out_time !== '00:00:00') {
+//             record.punch_out_time = moment
+//               .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
+//               .tz('Asia/Kolkata')
+//               .format('h:mm A');
+//           }
+
+//           // Format total_hours as HH:MM
+//           if (
+//             record.punch_in_time !== '00:00:00' &&
+//             record.punch_out_time !== '00:00:00'
+//           ) {
+//             const punchInMoment = moment(record.punch_in_time, 'h:mm A');
+//             const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
+//             const duration = moment.duration(punchOutMoment.diff(punchInMoment));
+//             const totalHours = Math.floor(duration.asHours());
+//             const totalMinutes = duration.minutes();
+//             record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
+//               .toString()
+//               .padStart(2, '0')}`;
+//           } else {
+//             record.total_hours = '00:00';
+//           }
+
+//           // Generate fake attendance_id if null
+//           if (!record.attendance_id) {
+//             const fixedPrefix = '100';
+//             const uniqueKey = `${record.emp_id}-${record.punch_date}`;
+//             const hash = crypto.createHash('sha256')
+//               .update(uniqueKey)
+//               .digest('hex');
+//             const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
+//             record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
+//           }
+
+//           return record;
+//         });
+
+//       result({ error: false, data: convertedResults });
+//     });
+//   } else {
+//     result({ error: true, message: "Unauthorized access" });
+//   }
+// };
+
+// attendance.attandance_count = (req, result) => {
+//   const punchDate = req.query.punch_date;
+//   const empId = req.query.emp_id;
+//   const user = JSON.parse(req.headers.authorization);
+
+//   if (user.role === 1) {
+//     // ✅ First: Get Attendance Records
+//     let attendanceQuery = `
+//       SELECT 
+//         IFNULL(a.attendance_id, NULL) AS attendance_id,
+//         d.punch_date,
+//         COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
+//         COALESCE(TIME(a.punch_out), '00:00:00') AS punch_out_time,
+//         e.emp_id,
+//         TRIM(e.emp_code) AS emp_code,
+//         TRIM(e.user_name) AS user_name,
+//         'RGPL' AS company_name,
+
+//         CASE 
+//           WHEN DAYOFWEEK(d.punch_date) = 1 THEN 
+//             CASE
+//               WHEN a.leave_status = 2 THEN 'L'
+//               WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+//               ELSE 
+//                 CASE 
+//                   WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
+//                   WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
+//                   WHEN a.leave_status = 1 THEN 'A'
+//                   WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+//                   WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
+//                   ELSE 'A'
+//                 END
+//             END
+//           ELSE 
+//             CASE 
+//               WHEN a.leave_status = 2 THEN 'L'
+//               WHEN a.leave_status = 1 THEN 'A'
+//               WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+//               WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
+//               ELSE 'A'
+//             END
+//         END AS attendance_status,
+
+//         COALESCE((
+//           SELECT lsub.leave_type 
+//           FROM romsondb.cor_leave_m lsub
+//           WHERE lsub.emp_id = e.emp_id
+//             AND DATE(lsub.enter_date) = d.punch_date
+//             AND lsub.status = 2
+//           ORDER BY lsub.start_date ASC
+//           LIMIT 1
+//         ), '0') AS leave_type,
+
+//         CASE 
+//           WHEN a.leave_status = 2 THEN DATE_FORMAT(l.enter_date, '%Y-%m-%d')
+//           ELSE NULL
+//         END AS applied_date,
+
+//         CASE 
+//           WHEN a.leave_status = 2 THEN d.punch_date
+//           WHEN EXISTS (
+//             SELECT 1 FROM romsondb.cor_leave_m lsub
+//             WHERE lsub.emp_id = e.emp_id
+//               AND DATE(lsub.enter_date) = d.punch_date
+//               AND lsub.status = 2
+//           ) THEN (
+//             SELECT MIN(lsub.start_date) FROM romsondb.cor_leave_m lsub
+//             WHERE lsub.emp_id = e.emp_id
+//               AND DATE(lsub.enter_date) = d.punch_date
+//               AND lsub.status = 2
+//           )
+//           ELSE NULL
+//         END AS leave_transaction_date,
+
+//         '' AS regu_status,
+//         NULL AS regu_approved,
+//         NULL AS requested_date,
+
+//         IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL,
+//           TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out),
+//           0
+//         ) AS total_hours
+
+//       FROM (SELECT ? AS punch_date) d
+//       LEFT JOIN romsondb.cor_emp_m e ON 1 = 1
+//       LEFT JOIN romsondb.cor_attendance_m a 
+//         ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+//       LEFT JOIN romsondb.cor_leave_m l 
+//         ON e.emp_id = l.emp_id 
+//         AND l.start_date <= d.punch_date 
+//         AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+//       LEFT JOIN romsondb.cor_holiday_m h 
+//         ON FIND_IN_SET(e.state_id, h.state_id) > 0
+//         AND h.date = d.punch_date
+//       WHERE e.status = 'A'
+//     `;
+
+//     // ✅ Second: Regularization Query (modified)
+//     let regularizationQuery = `
+//     SELECT 
+//       NULL AS attendance_id,  -- ✅ Yahaan NULL set karo taki baad mein generate ho
+//       DATE_FORMAT(r.Request_date, '%Y-%m-%d') AS punch_date,
+//       '09:30:00' AS punch_in_time,
+//       '17:30:00' AS punch_out_time,
+//       e.emp_id,
+//       TRIM(e.emp_code) AS emp_code,
+//       TRIM(e.user_name) AS user_name,
+//       'RGPL' AS company_name,
+//       CASE WHEN r.status = 'A' THEN 'P' ELSE '' END AS regu_status,
+//       DATE_FORMAT(r.Approved_date, '%Y-%m-%d') AS regu_approved,
+//       DATE_FORMAT(r.Request_date, '%Y-%m-%d') AS regu_transaction_date,
+//       '08:00' AS total_hours,
+//       'regularization' AS record_type  -- ✅ Identifier add karo
+
+//     FROM romsondb.cor_regulization_m r
+//     INNER JOIN romsondb.cor_emp_m e 
+//       ON r.enter_by = e.emp_id
+//     LEFT JOIN romsondb.cor_attendance_m a 
+//       ON e.emp_id = a.emp_id 
+//       AND DATE(a.punch_date) = DATE(r.Approved_date)
+//     WHERE DATE(r.Approved_date) = ?
+//       AND e.status = 'A'
+//       AND r.status = 'A'
+//   `;
+
+//     if (empId) {
+//       attendanceQuery += ` AND e.emp_id = ?`;
+//       regularizationQuery += ` AND e.emp_id = ?`;
+//     }
+
+//     const attendanceParams = empId ? [punchDate, empId] : [punchDate];
+//     const regularizationParams = empId ? [punchDate, empId] : [punchDate];
+
+//     // ✅ Execute both queries
+//     Promise.all([
+//       new Promise((resolve, reject) => {
+//         sql.query(attendanceQuery, attendanceParams, (err, res) => {
+//           if (err) reject(err);
+//           else resolve(res);
+//         });
+//       }),
+//       new Promise((resolve, reject) => {
+//         sql.query(regularizationQuery, regularizationParams, (err, res) => {
+//           if (err) reject(err);
+//           else resolve(res);
+//         });
+//       })
+//     ])
+//       .then(([attendanceResults, regularizationResults]) => {
+//         const allResults = [...attendanceResults, ...regularizationResults];
+
+//         const convertedResults = allResults
+//           .filter(record => !['11000011', '11000010', '11000102'].includes(String(record.emp_id)))
+//           .map(record => {
+
+//             // ✅ Har record ke liye attendance_id generate karo
+//             const generateAttendanceId = (empId, punchDate, suffix = '') => {
+//               const fixedPrefix = '100';
+//               const uniqueKey = `${empId}-${punchDate}${suffix}`;
+//               const hash = crypto.createHash('sha256').update(uniqueKey).digest('hex');
+//               const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
+//               return `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
+//             };
+
+//             // ✅ Attendance ID generate karo based on record type
+//             if (!record.attendance_id || record.record_type === 'regularization') {
+//               const suffix = record.record_type === 'regularization' ? '-REG' : '';
+//               record.attendance_id = generateAttendanceId(record.emp_id, record.punch_date, suffix);
+//             }
+
+//             if (record.regu_status === 'P') {
+//               // ✅ Regularization ke liye fixed time
+//               record.punch_in_time = '9:30 AM';
+//               record.punch_out_time = '5:30 PM';
+//               record.total_hours = '08:00';
+//             } else {
+//               // ✅ Normal attendance ke liye time conversion
+//               if (record.punch_in_time !== '00:00:00') {
+//                 record.punch_in_time = moment
+//                   .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
+//                   .tz('Asia/Kolkata')
+//                   .format('h:mm A');
+//               }
+
+//               if (record.punch_out_time !== '00:00:00') {
+//                 record.punch_out_time = moment
+//                   .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
+//                   .tz('Asia/Kolkata')
+//                   .format('h:mm A');
+//               }
+
+//               // Format total_hours
+//               if (record.punch_in_time !== '00:00:00' && record.punch_out_time !== '00:00:00') {
+//                 const punchInMoment = moment(record.punch_in_time, 'h:mm A');
+//                 const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
+//                 const duration = moment.duration(punchOutMoment.diff(punchInMoment));
+//                 const totalHours = Math.floor(duration.asHours());
+//                 const totalMinutes = duration.minutes();
+//                 record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
+//                   .toString()
+//                   .padStart(2, '0')}`;
+//               } else {
+//                 record.total_hours = '00:00';
+//               }
+//             }
+
+//             // ✅ Extra fields remove karo
+//             delete record.regu_status;
+//             delete record.regu_approved;
+//             delete record.requested_date;
+//             delete record.regu_transaction_date;
+//             delete record.leave_transaction_date;
+//             delete record.record_type;
+
+//             return record;
+//           });
+
+//         result({ error: false, data: convertedResults });
+//       })
+//       .catch(err => {
+//         console.error("Query Error: ", err);
+//         result({ error: true, message: "Failed to fetch attendance data" });
+//       });
+
+//   } else {
+//     result({ error: true, message: "Unauthorized access" });
+//   }
+// };
+
+
 attendance.attandance_count = (req, result) => {
   const punchDate = req.query.punch_date;
   const empId = req.query.emp_id;
   const user = JSON.parse(req.headers.authorization);
 
   if (user.role === 1) {
-    let query = `
+    // ✅ 1️⃣ Attendance Query
+    let attendanceQuery = `
+     SELECT DISTINCT 
+  IFNULL(a.attendance_id, NULL) AS attendance_id,
+  d.punch_date,
+  COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
+  COALESCE(TIME(a.punch_out), '00:00:00') AS punch_out_time,
+  e.emp_id,
+  TRIM(e.emp_code) AS emp_code,
+  TRIM(e.user_name) AS user_name,
+  'RGPL' AS company_name,
+
+  CASE 
+    WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY' -- ✅ Show holiday first (any day)
+    WHEN a.leave_status = 2 THEN 'L'
+    WHEN a.leave_status = 1 THEN 'A'
+    WHEN DAYOFWEEK(d.punch_date) = 1 THEN 'WEO' -- Sunday
+    WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO' -- Saturday off (for state 39)
+    WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
+    WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
+    ELSE 'A'
+  END AS attendance_status,
+
+  COALESCE((
+    SELECT lsub.leave_type 
+    FROM romsondb.cor_leave_m lsub
+    WHERE lsub.emp_id = e.emp_id
+      AND DATE(lsub.enter_date) = d.punch_date
+      AND lsub.status = 2
+    ORDER BY lsub.start_date ASC
+    LIMIT 1
+  ), '0') AS leave_type,
+
+  CASE 
+    WHEN a.leave_status = 2 THEN DATE_FORMAT(l.enter_date, '%Y-%m-%d')
+    ELSE NULL
+  END AS applied_date,
+
+  CASE 
+    WHEN a.leave_status = 2 THEN d.punch_date
+    WHEN EXISTS (
+      SELECT 1 FROM romsondb.cor_leave_m lsub
+      WHERE lsub.emp_id = e.emp_id
+        AND DATE(lsub.enter_date) = d.punch_date
+        AND lsub.status = 2
+    ) THEN (
+      SELECT MIN(lsub.start_date) FROM romsondb.cor_leave_m lsub
+      WHERE lsub.emp_id = e.emp_id
+        AND DATE(lsub.enter_date) = d.punch_date
+        AND lsub.status = 2
+    )
+    ELSE NULL
+  END AS leave_transaction_date,
+
+  '' AS regu_status,
+  NULL AS regu_approved,
+  NULL AS requested_date,
+
+  IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL,
+    TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out),
+    0
+  ) AS total_hours,
+
+  'attendance' AS record_type
+
+FROM (SELECT ? AS punch_date) d
+LEFT JOIN romsondb.cor_emp_m e ON 1 = 1
+LEFT JOIN romsondb.cor_attendance_m a 
+  ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
+LEFT JOIN romsondb.cor_leave_m l 
+  ON e.emp_id = l.emp_id 
+  AND l.start_date <= d.punch_date 
+  AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
+LEFT JOIN romsondb.cor_holiday_m h 
+  ON FIND_IN_SET(e.state_id, h.state_id) > 0
+  AND h.date = d.punch_date
+WHERE e.status = 'A'
+
+    `;
+
+    // ✅ 2️⃣ Regularization Query
+    let regularizationQuery = `
       SELECT 
-        IFNULL(a.attendance_id, NULL) AS attendance_id,
-        d.punch_date,
-        COALESCE(TIME(a.punch_in), '00:00:00') AS punch_in_time,
-        COALESCE(TIME(a.punch_out), '00:00:00') AS punch_out_time,
+        NULL AS attendance_id,
+        DATE_FORMAT(r.Request_date, '%Y-%m-%d') AS punch_date,
+        '09:30:00' AS punch_in_time,
+        '17:30:00' AS punch_out_time,
         e.emp_id,
         TRIM(e.emp_code) AS emp_code,
         TRIM(e.user_name) AS user_name,
         'RGPL' AS company_name,
+        CASE WHEN r.status = 'A' THEN 'P' ELSE '' END AS regu_status,
+        DATE_FORMAT(r.Approved_date, '%Y-%m-%d') AS regu_approved,
+        DATE_FORMAT(r.Request_date, '%Y-%m-%d') AS regu_transaction_date,
+        '08:00' AS total_hours,
+        'regularization' AS record_type
+      FROM romsondb.cor_regulization_m r
+      INNER JOIN romsondb.cor_emp_m e ON r.enter_by = e.emp_id
+      WHERE DATE(r.Approved_date) = ?
+        AND e.status = 'A'
+        AND r.status = 'A'
+    `;
 
-        CASE 
-          WHEN DAYOFWEEK(d.punch_date) = 1 THEN 
-            CASE
-              WHEN a.leave_status = 2 THEN 'L'
-              WHEN a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
-              ELSE 
-                CASE 
-                  WHEN h.date IS NOT NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'PHY'
-                  WHEN e.state_id = 39 AND DAYOFWEEK(d.punch_date) = 7 AND h.date IS NULL AND a.punch_in IS NULL AND a.punch_out IS NULL THEN 'WEO'
-                  WHEN a.leave_status = 1 THEN 'A'
-                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
-                  WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
-                  ELSE 'A'
-                END
-            END
-          ELSE 
-            CASE 
-              WHEN a.leave_status = 2 THEN 'L'
-              WHEN a.leave_status = 1 THEN 'A'
-              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 8 THEN 'P'
-              WHEN a.status = 1 AND TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out) >= 4 THEN 'ABSHD'
-              ELSE 'A'
-            END
-        END AS attendance_status,
+    // ✅ 3️⃣ Leave Query (full range)
+    let leaveQuery = `
+      SELECT 
+        NULL AS attendance_id,
+        DATE_FORMAT(l.start_date + INTERVAL seqs.seq DAY, '%Y-%m-%d') AS punch_date,
+        DATE_FORMAT(l.start_date + INTERVAL seqs.seq DAY, '%Y-%m-%d') AS leave_transaction_date,
+        DATE_FORMAT(l.Approved_date, '%Y-%m-%d') AS approved_date,
+        l.leave_type,
+        e.emp_id,
+        TRIM(e.emp_code) AS emp_code,
+        TRIM(e.user_name) AS user_name,
+        'RGPL' AS company_name,
+        'leave' AS record_type,
+                CASE WHEN l.status = 2 THEN 'L' ELSE '' END AS attendance_status
 
-        -- ✅ Updated leave_type logic
-        COALESCE((
-          SELECT lsub.leave_type 
-          FROM romsondb.cor_leave_m lsub
-          WHERE lsub.emp_id = e.emp_id
-            AND DATE(lsub.enter_date) = d.punch_date
-            AND lsub.status = 2
-          ORDER BY lsub.start_date ASC
-          LIMIT 1
-        ), '0') AS leave_type,
-
-        -- Applied date if available
-        CASE 
-          WHEN a.leave_status = 2 THEN DATE_FORMAT(l.enter_date, '%Y-%m-%d')
-          ELSE NULL
-        END AS applied_date,
-
-        CASE 
-          WHEN a.leave_status = 2 THEN d.punch_date
-          WHEN EXISTS (
-            SELECT 1 FROM romsondb.cor_leave_m lsub
-            WHERE lsub.emp_id = e.emp_id
-              AND DATE(lsub.enter_date) = d.punch_date
-              AND lsub.status = 2
-          ) THEN (
-            SELECT MIN(lsub.start_date) FROM romsondb.cor_leave_m lsub
-            WHERE lsub.emp_id = e.emp_id
-              AND DATE(lsub.enter_date) = d.punch_date
-              AND lsub.status = 2
-          )
-          ELSE NULL
-        END AS leave_transaction_date,
-
-        IF(a.status = 1 AND a.punch_in IS NOT NULL AND a.punch_out IS NOT NULL,
-          TIMESTAMPDIFF(HOUR, a.punch_in, a.punch_out),
-          0
-        ) AS total_hours
-
-      FROM (SELECT ? AS punch_date) d
-      LEFT JOIN romsondb.cor_emp_m e ON 1 = 1
-      LEFT JOIN romsondb.cor_attendance_m a ON e.emp_id = a.emp_id AND a.punch_date = d.punch_date
-      LEFT JOIN romsondb.cor_leave_m l ON e.emp_id = l.emp_id 
-        AND l.start_date <= d.punch_date 
-        AND (l.end_date >= d.punch_date OR l.end_date IS NULL)
-      LEFT JOIN romsondb.cor_holiday_m h 
-        ON FIND_IN_SET(e.state_id, h.state_id) > 0
-        AND h.date = d.punch_date
-      WHERE e.status = 'A'
+      FROM romsondb.cor_leave_m l
+      INNER JOIN romsondb.cor_emp_m e ON l.emp_id = e.emp_id
+      JOIN (
+        SELECT 0 AS seq UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+        UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9
+        UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14
+        UNION ALL SELECT 15 UNION ALL SELECT 16 UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19
+        UNION ALL SELECT 20 UNION ALL SELECT 21 UNION ALL SELECT 22 UNION ALL SELECT 23 UNION ALL SELECT 24
+        UNION ALL SELECT 25 UNION ALL SELECT 26 UNION ALL SELECT 27 UNION ALL SELECT 28 UNION ALL SELECT 29
+      ) seqs
+        ON DATE(l.start_date + INTERVAL seqs.seq DAY) <= DATE(l.end_date)
+      WHERE DATE(l.Approved_date) = ?
+        AND l.status = 2
+        AND e.status = 'A'
     `;
 
     if (empId) {
-      query += ` AND e.emp_id = ?`;
+      attendanceQuery += ` AND e.emp_id = ?`;
+      regularizationQuery += ` AND e.emp_id = ?`;
+      leaveQuery += ` AND e.emp_id = ?`;
     }
 
-    const queryParams = empId ? [punchDate, empId] : [punchDate];
+    const attendanceParams = empId ? [punchDate, empId] : [punchDate];
+    const regularizationParams = empId ? [punchDate, empId] : [punchDate];
+    const leaveParams = empId ? [punchDate, empId] : [punchDate];
 
-    sql.query(query, queryParams, (err, res) => {
-      if (err) {
-        console.error("Query Error: ", err);
-        result({ error: true, message: "Failed to fetch attendance data" });
-        return;
-      }
+    Promise.all([
+      new Promise((resolve, reject) => sql.query(attendanceQuery, attendanceParams, (err, res) => err ? reject(err) : resolve(res))),
+      new Promise((resolve, reject) => sql.query(regularizationQuery, regularizationParams, (err, res) => err ? reject(err) : resolve(res))),
+      new Promise((resolve, reject) => sql.query(leaveQuery, leaveParams, (err, res) => err ? reject(err) : resolve(res)))
+    ])
+      .then(([attendanceResults, regularizationResults, leaveResults]) => {
+        const allResults = [...attendanceResults, ...regularizationResults, ...leaveResults];
 
-      const convertedResults = res
-        .filter(record => !['11000011', '11000010', '11000102'].includes(String(record.emp_id)))
-        .map(record => {
-          if (record.punch_in_time !== '00:00:00') {
-            record.punch_in_time = moment
-              .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
-              .tz('Asia/Kolkata')
-              .format('h:mm A');
-          }
-
-          if (record.punch_out_time !== '00:00:00') {
-            record.punch_out_time = moment
-              .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
-              .tz('Asia/Kolkata')
-              .format('h:mm A');
-          }
-
-          // Format total_hours as HH:MM
-          if (
-            record.punch_in_time !== '00:00:00' &&
-            record.punch_out_time !== '00:00:00'
-          ) {
-            const punchInMoment = moment(record.punch_in_time, 'h:mm A');
-            const punchOutMoment = moment(record.punch_out_time, 'h:mm A');
-
-            const duration = moment.duration(punchOutMoment.diff(punchInMoment));
-            const totalHours = Math.floor(duration.asHours());
-            const totalMinutes = duration.minutes();
-
-            record.total_hours = `${totalHours.toString().padStart(2, '0')}:${totalMinutes
-              .toString()
-              .padStart(2, '0')}`;
-          } else {
-            record.total_hours = '00:00';
-          }
-
-          // Generate fake attendance_id if null
-          if (!record.attendance_id) {
-            const fixedPrefix = '100';
-            const uniqueKey = `${record.emp_id}-${record.punch_date}`;
-            const hash = crypto.createHash('sha256')
-              .update(uniqueKey)
-              .digest('hex');
-            const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
-            record.attendance_id = `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
-          }
-
-          return record;
+        // ✅ Filter step: if both attendance/regularization and leave exist, keep only leave
+        const filteredResults = allResults.filter((record, _, self) => {
+          const hasLeave = self.some(
+            r => r.emp_id === record.emp_id &&
+                 r.punch_date === record.punch_date &&
+                 r.record_type === 'leave'
+          );
+          if (record.record_type !== 'leave' && hasLeave) return false;
+          return true;
         });
 
+        const convertedResults = filteredResults
+          .filter(r => !['11000011', '11000010', '11000102'].includes(String(r.emp_id)))
+          .map(record => {
+            const generateAttendanceId = (empId, punchDate, suffix = '') => {
+              const fixedPrefix = '100';
+              const uniqueKey = `${empId}-${punchDate}${suffix}`;
+              const hash = crypto.createHash('sha256').update(uniqueKey).digest('hex');
+              const uniqueSuffix = Math.abs(parseInt(hash.slice(-5), 16)) % 100000;
+              return `${fixedPrefix}${String(uniqueSuffix).padStart(5, '0')}`;
+            };
 
-      result({ error: false, data: convertedResults });
-    });
+            if (!record.attendance_id) {
+              const suffix = record.record_type === 'regularization'
+                ? '-REG'
+                : record.record_type === 'leave'
+                ? '-LEV'
+                : '';
+              record.attendance_id = generateAttendanceId(record.emp_id, record.punch_date, suffix);
+            }
+
+            if (record.regu_status === 'P') {
+              record.punch_in_time = '9:30 AM';
+              record.punch_out_time = '5:30 PM';
+              record.total_hours = '08:00';
+            } else if (record.record_type !== 'leave') {
+              if (record.punch_in_time !== '00:00:00') {
+                record.punch_in_time = moment
+                  .tz(record.punch_in_time, 'HH:mm:ss', 'GMT')
+                  .tz('Asia/Kolkata')
+                  .format('h:mm A');
+              }
+              if (record.punch_out_time !== '00:00:00') {
+                record.punch_out_time = moment
+                  .tz(record.punch_out_time, 'HH:mm:ss', 'GMT')
+                  .tz('Asia/Kolkata')
+                  .format('h:mm A');
+              }
+            }
+
+            if (record.record_type !== 'regularization') {
+              delete record.regu_status;
+              delete record.regu_approved;
+              delete record.regu_transaction_date;
+            }
+            delete record.requested_date;
+            delete record.record_type;
+
+            return record;
+          });
+
+        result({ error: false, data: convertedResults });
+      })
+      .catch(err => {
+        console.error('Query Error: ', err);
+        result({ error: true, message: 'Failed to fetch attendance data' });
+      });
   } else {
-    result({ error: true, message: "Unauthorized access" });
+    result({ error: true, message: 'Unauthorized access' });
   }
 };
-
-
-
 
 
 /////////////////////for crm_report////////////////////////////////////
@@ -1564,8 +2069,6 @@ attendance.punchInOutTime = (req, result) => {
   });
 };
 
-
-
 attendance.shiftDetails = (req, result) => {
   sql.query(`
     SELECT 
@@ -1588,12 +2091,6 @@ FROM
     }
   });
 };
-
-
-
-
-
-
 
 attendance.attandance_summary = (req, result) => {
   const empId = req.query.emp_id; // Employee ID parameter
@@ -1629,10 +2126,6 @@ attendance.attandance_summary = (req, result) => {
     }
   });
 };
-
-
-
-
 
 attendance.leave_history = (req, result) => {
   const empId = req.query.emp_id; // Employee ID parameter (optional)
@@ -2592,6 +3085,62 @@ WHERE a.activity_date BETWEEN '${fromDate}' AND '${toDate}';
     }
   });
 };
+
+//////////////////////CRM_ORDER_REPORT///////////////////////////////////
+attendance.CrmOrderReport = (req, result) => {
+  const { fromDate, toDate } = req.query;
+
+  const query = `
+SELECT 
+    o.order_id AS "OrderID",
+    DATE_FORMAT(o.order_date, '%e/%c/%Y') AS "OrderDate",
+    DATE_FORMAT(o.order_time, '%l:%i %p') AS "OrderTime",
+    CONCAT(o.outlet_id, ' - ', ot.outlet_name) AS "Outlet",
+    ot.outlet_category_id AS "OutletCat",
+    b.beat_name AS "Beat",
+    d.dealer_name AS "DealerName",
+    z.zone_name AS "ZoneName",
+    CONCAT(e.user_name, ' - ', o.employee_id) AS "UserName",
+    CONCAT(rm.user_name, ' - ', e.reporting_to) AS "ReportingTo",
+    od.item_id AS "skuID",
+    s.sku_name AS "SkuName",
+    s.sku_code AS "skucode",
+    ROUND(od.item_qty, 3) AS "TTLQTY",
+    ROUND(od.item_discount, 3) AS "Discount",
+    ROUND(od.item_price_unit, 3) AS "SkuPrice",
+    ROUND((od.item_qty * od.item_price_unit), 3) AS "Amount",
+    ROUND(od.item_gst, 3) AS "GST",
+    ROUND((od.item_qty * od.item_price_unit * od.item_gst / 100), 3) AS "GstAmount",
+    ROUND(((od.item_qty * od.item_price_unit) + (od.item_qty * od.item_price_unit * od.item_gst / 100)), 3) AS "NetAmount",
+    CONCAT(o.order_lat, ', ', o.order_lag) AS "Location",
+    o.call_type AS "CALLWITH",
+    o.joined_name AS "JOINPERSONNAME"
+FROM cor_order_m o
+LEFT JOIN cor_order_d od ON o.order_id = od.order_id
+LEFT JOIN cor_emp_m e ON o.employee_id = e.emp_id
+LEFT JOIN cor_emp_m rm ON e.reporting_to = rm.emp_id
+LEFT JOIN cor_outlet_m ot ON o.outlet_id = ot.outlet_id
+LEFT JOIN cor_beat_m b ON o.beat_id = b.beat_id
+LEFT JOIN cor_dealer_m d ON o.dealer_id = d.dealer_id
+LEFT JOIN cor_zone_m z ON o.zone_id = z.zone_id
+LEFT JOIN cor_sku_m s ON od.item_id = s.sku_id
+WHERE o.order_date BETWEEN '${fromDate}' AND '${toDate}'
+ORDER BY o.order_date, e.user_name, b.beat_name, o.outlet_id, s.sku_name;
+  `;
+
+  console.log("Executing Query:", query);
+
+  sql.query(query, (err, res) => {
+    if (err) {
+      console.error("Query Error:", err);
+      result({ error: true, data: "Something Went Wrong" });
+    } else {
+      result({ error: false, data: res });
+    }
+  });
+};
+
+
 
 ///////////////////////regularization-report//////////////////////////
 

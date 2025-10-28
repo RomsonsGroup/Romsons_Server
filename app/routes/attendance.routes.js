@@ -28,6 +28,7 @@ module.exports = app => {
     router.get("/PerformanceSummary", Attendance.PerformanceSummary);
     router.post("/leaveReportSummary", Attendance.leaveReportSummary);
     router.get("/CrmActivityReport", Attendance.CrmActivityReport);
+    router.get("/CrmOrderReport", Attendance.CrmOrderReport);
     router.get("/RegularizationReport", Attendance.RegularizationReport);
     router.get("/UserMasterReport", Attendance.UserMasterReport);
     router.post("/ManuallyInsertAttendance", Attendance.ManuallyInsertAttendance);
