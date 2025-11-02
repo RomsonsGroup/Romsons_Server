@@ -2603,7 +2603,7 @@ attendance_data AS (
                  AND (a.punch_out IS NULL OR a.punch_out = '0000-00-00 00:00:00')
                  AND TIME(CONVERT_TZ(a.punch_in, '+00:00', '+05:30')) <= '10:30:59' THEN 'P'
 
-            ELSE 'A'
+            ELSE 'A' 
         END AS attendance_status,
 
         CASE 
@@ -3094,7 +3094,7 @@ attendance.CrmOrderReport = (req, result) => {
 SELECT 
     o.order_id AS "OrderID",
     DATE_FORMAT(o.order_date, '%e/%c/%Y') AS "OrderDate",
-    DATE_FORMAT(o.order_time, '%l:%i %p') AS "OrderTime",
+DATE_FORMAT(CONVERT_TZ(o.order_time, '+00:00', '+05:30'), '%l:%i %p') AS "OrderTime",
     CONCAT(o.outlet_id, ' - ', ot.outlet_name) AS "Outlet",
     ot.outlet_category_id AS "OutletCat",
     b.beat_name AS "Beat",
